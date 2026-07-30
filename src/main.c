@@ -4,9 +4,18 @@
 #include "driver/i2c.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
+#include "nvs_flash.h"       // Энергонезависимая память (нужна для Wi-Fi)
+#include "esp_wifi.h"        // Драйвер Wi-Fi
+#include "esp_event.h"       // Обработчик системных событий
+#include "esp_http_client.h" // HTTP клиент
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
+
+// --- НАСТРОЙКИ Wi-Fi & BLYNK ---
+#define WIFI_SSID "xBocT1k_2.4G"
+#define WIFI_PASS "******" // Ваш пароль Wi-Fi
+#define BLYNK_TOKEN "******"  // Ваш токен Blynk
 
 // --- НАСТРОЙКИ ПИНОВ ---
 #define I2C_MASTER_SDA_IO       11      // GP11
@@ -71,10 +80,82 @@ float read_htu21d(uint8_t cmd) {
 }
 
 // ---------------------------------------------------------
+// ОБРАБОТЧИК И ИНИЦИАЛИЗАЦИЯ WI-FI
+// ---------------------------------------------------------
+static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        esp_wifi_connect();
+        ESP_LOGI(TAG, "Переподключение к Wi-Fi...");
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ESP_LOGI(TAG, "Wi-Fi подключен! IP получен.");
+    }
+}
+
+void wifi_init(void) {
+    ESP_ERROR_CHECK(nvs_flash_init()); // NVS обязателен для работы Wi-Fi
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+    
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL);
+    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL);
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = WIFI_SSID,
+            .password = WIFI_PASS,
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+// ---------------------------------------------------------
+// ОТПРАВКА ДАННЫХ В BLYNK (HTTP REST API)
+// ---------------------------------------------------------
+void send_to_blynk(int temp, int hum, int cms_raw) {
+    char url[256];
+    // Собираем строку запроса с нашими переменными
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V0=%d&V1=%d&V2=%d", 
+             BLYNK_TOKEN, temp, hum, cms_raw);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_GET,
+    };
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t err = esp_http_client_perform(client);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Успех BLYNK: T=%d, H=%d, CMS=%d", temp, hum, cms_raw);
+    } else {
+        ESP_LOGE(TAG, "Ошибка отправки: %s", esp_err_to_name(err));
+    }
+    esp_http_client_cleanup(client);
+}
+
+
+// ---------------------------------------------------------
 // ТОЧКА ВХОДА (Главная программа)
 // ---------------------------------------------------------
 void app_main(void) {
+    
     ESP_LOGI(TAG, "=== Запуск тестирования оборудования ===");
+
+    // Инициализация NVS и Wi-Fi
+    ESP_ERROR_CHECK(nvs_flash_init());
+    nvs_flash_init();
+    wifi_init();
+
+    // Ждем 5 секунд, чтобы Wi-Fi успел подключиться
+    vTaskDelay(pdMS_TO_TICKS(5000));
 
     // 1. Инициализация I2C (GY-21)
     ESP_ERROR_CHECK(i2c_master_init());
@@ -110,7 +191,10 @@ void app_main(void) {
         // Выводим в терминал (зеленым цветом)
         ESP_LOGI(TAG, "Т: %d °C | В: %d %% | CMS_RAW: %d", temp, hum, cms_raw);
 
+        // Отправляем данные в Blynk
+        send_to_blynk(temp, hum, cms_raw);
+
         // Пауза 2 секунды. vTaskDelay обязателен, чтобы не повесить Watchdog
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(60000));
     }
 }

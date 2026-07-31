@@ -8,6 +8,7 @@
 #include "esp_wifi.h"        // Драйвер Wi-Fi
 #include "esp_event.h"       // Обработчик системных событий
 #include "esp_http_client.h" // HTTP клиент
+#include "driver/gpio.h"
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
@@ -30,6 +31,9 @@ static const char *TAG = "GROW_HW_TEST";
 #define HTU21D_ADDR             0x40
 #define HTU21D_TEMP_CMD         0xE3
 #define HTU21D_HUMIDITY_CMD     0xE5
+
+// Наш цифровой пин для насоса
+#define PUMP_PIN 13 
 
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
@@ -141,11 +145,61 @@ void send_to_blynk(int temp, int hum, int cms_raw) {
     esp_http_client_cleanup(client);
 }
 
+// ---------------------------------------------------------
+// ЧТЕНИЕ ДАННЫХ ИЗ BLYNK (Кнопка насоса) - ИСПРАВЛЕННОЕ
+// ---------------------------------------------------------
+int read_blynk_button(void) {
+    char url[256];
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/get?token=%s&V3", BLYNK_TOKEN);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_GET,
+    };
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    int button_state = 0;
+    
+    // 1. Открываем соединение (0 - означает стандартную длину)
+    if (esp_http_client_open(client, 0) == ESP_OK) {
+        
+        // 2. Получаем системные заголовки от сервера
+        esp_http_client_fetch_headers(client);
+        
+        // 3. Читаем само тело ответа
+        char response[16] = {0};
+        int read_bytes = esp_http_client_read(client, response, sizeof(response) - 1);
+        
+        if (read_bytes > 0) {
+            ESP_LOGI(TAG, "Сырой ответ от Blynk (V3): '%s'", response);
+            
+            // Проверяем наличие единицы в ответе
+            if (strchr(response, '1') != NULL) {
+                button_state = 1;
+            }
+        } else {
+            ESP_LOGW(TAG, "Сервер ответил, но тело ответа пустое");
+        }
+    } else {
+        ESP_LOGE(TAG, "Не удалось открыть HTTP соединение для чтения");
+    }
+    
+    // 4. Обязательно закрываем поток и очищаем память
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    
+    return button_state;
+}
 
 // ---------------------------------------------------------
 // ТОЧКА ВХОДА (Главная программа)
 // ---------------------------------------------------------
 void app_main(void) {
+
+    // Инициализация пина насоса
+    gpio_reset_pin(PUMP_PIN);
+    gpio_set_direction(PUMP_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(PUMP_PIN, 0); // 0 - выключено, 1 - включено
     
     ESP_LOGI(TAG, "=== Запуск тестирования оборудования ===");
 
@@ -179,22 +233,29 @@ void app_main(void) {
     ESP_LOGI(TAG, "Начинаем опрос сенсоров...\n");
 
     // 3. Бесконечный цикл опроса
+    int tick_count = 0;
+
     while (1) {
-        // Читаем I2C
-        int temp = read_htu21d(HTU21D_TEMP_CMD);
-        int hum = read_htu21d(HTU21D_HUMIDITY_CMD);
+        // 1. Опрашиваем кнопку из облака каждые 2 секунды
+        int pump_on = read_blynk_button();
+        
+        // 2. Включаем или выключаем физический пин
+        gpio_set_level(PUMP_PIN, pump_on);
+        
+        // 3. Отправляем телеметрию раз в 10 секунд
+        if (tick_count >= 30) { // 30 * 2 секунды = 60 секунд
+            int temp = read_htu21d(HTU21D_TEMP_CMD); // твой код чтения 
+            int hum = read_htu21d(HTU21D_HUMIDITY_CMD);
+            
+            int cms_raw = 0;
+            ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw));
 
-        // Читаем АЦП
-        int cms_raw = 0;
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw));
+            send_to_blynk(temp, hum, cms_raw);
+            
+            tick_count = 0; // Сбрасываем счетчик
+        }
 
-        // Выводим в терминал (зеленым цветом)
-        ESP_LOGI(TAG, "Т: %d °C | В: %d %% | CMS_RAW: %d", temp, hum, cms_raw);
-
-        // Отправляем данные в Blynk
-        send_to_blynk(temp, hum, cms_raw);
-
-        // Пауза 2 секунды. vTaskDelay обязателен, чтобы не повесить Watchdog
-        vTaskDelay(pdMS_TO_TICKS(60000));
+        tick_count++;
+        vTaskDelay(pdMS_TO_TICKS(2000)); // Базовая пауза цикла 2 секунды
     }
 }

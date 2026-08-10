@@ -9,6 +9,8 @@
 #include "esp_event.h"       // Обработчик системных событий
 #include "esp_http_client.h" // HTTP клиент
 #include "driver/gpio.h"
+#include "esp_timer.h"       // Для точного отсчета времени
+#include "rom/ets_sys.h"     // Для функции задержки ets_delay_us
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
@@ -34,6 +36,10 @@ static const char *TAG = "GROW_HW_TEST";
 
 // Наш цифровой пин для насоса
 #define PUMP_PIN 13 
+
+// Пины для ультразвукового датчика (HC-SR04)
+#define TRIG_PIN 14
+#define ECHO_PIN 2
 
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
@@ -61,7 +67,7 @@ float read_htu21d(uint8_t cmd) {
     i2c_master_write_to_device(I2C_MASTER_NUM, HTU21D_ADDR, &cmd, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
     
     // Ждем 50мс, пока датчик сделает замер
-    vTaskDelay(pdMS_TO_TICKS(50)); 
+    ets_delay_us(50000); // Используем функцию задержки из ROM
     
     // Читаем 3 байта (2 байта данных + 1 байт контрольной суммы)
     esp_err_t err = i2c_master_read_from_device(I2C_MASTER_NUM, HTU21D_ADDR, data, 3, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
@@ -192,6 +198,56 @@ int read_blynk_button(void) {
 }
 
 // ---------------------------------------------------------
+// ИНИЦИАЛИЗАЦИЯ УЛЬТРАЗВУКОВОГО ДАТЧИКА
+// ---------------------------------------------------------
+void init_ultrasonic(void) {
+    // Настраиваем TRIG как выход
+    gpio_reset_pin(TRIG_PIN);
+    gpio_set_direction(TRIG_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(TRIG_PIN, 0); // По умолчанию выключен
+
+    // Настраиваем ECHO как вход
+    gpio_reset_pin(ECHO_PIN);
+    gpio_set_direction(ECHO_PIN, GPIO_MODE_INPUT);
+}
+
+// ---------------------------------------------------------
+// ФУНКЦИЯ ИЗМЕРЕНИЯ ДИСТАНЦИИ УЛЬТРАЗВУКОМ
+// ---------------------------------------------------------
+float get_water_distance_cm(void) {
+    // 1. Посылаем стартовый импульс длиной 10 микросекунд
+    gpio_set_level(TRIG_PIN, 1);
+    ets_delay_us(10);
+    gpio_set_level(TRIG_PIN, 0);
+
+    // 2. Ждем, пока датчик поднимет ECHO в HIGH (начало ответа)
+    int64_t start_wait = esp_timer_get_time();
+    while (gpio_get_level(ECHO_PIN) == 0) {
+        // Таймаут, чтобы код не завис, если датчик отключится
+        if (esp_timer_get_time() - start_wait > 20000) {
+            ESP_LOGE(TAG, "Таймаут датчика уровня: нет ответа");
+            return -1.0; 
+        }
+    }
+    int64_t echo_start = esp_timer_get_time(); // Фиксируем время старта
+
+    // 3. Ждем, пока датчик опустит ECHO в LOW (конец ответа)
+    while (gpio_get_level(ECHO_PIN) == 1) {
+        if (esp_timer_get_time() - echo_start > 30000) { // Примерно 5 метров
+            ESP_LOGE(TAG, "Таймаут датчика уровня: сигнал потерян");
+            return -1.0;
+        }
+    }
+    int64_t echo_end = esp_timer_get_time(); // Фиксируем время возврата
+
+    // 4. Считаем дистанцию
+    int64_t duration = echo_end - echo_start;
+    float distance_cm = (duration * 0.0343) / 2.0;
+    
+    return distance_cm;
+}
+
+// ---------------------------------------------------------
 // ТОЧКА ВХОДА (Главная программа)
 // ---------------------------------------------------------
 void app_main(void) {
@@ -200,7 +256,10 @@ void app_main(void) {
     gpio_reset_pin(PUMP_PIN);
     gpio_set_direction(PUMP_PIN, GPIO_MODE_OUTPUT);
     gpio_set_level(PUMP_PIN, 0); // 0 - выключено, 1 - включено
-    
+
+    // Инициализация ультразвукового датчика
+    init_ultrasonic();
+
     ESP_LOGI(TAG, "=== Запуск тестирования оборудования ===");
 
     // Инициализация NVS и Wi-Fi
@@ -241,8 +300,17 @@ void app_main(void) {
         
         // 2. Включаем или выключаем физический пин
         gpio_set_level(PUMP_PIN, pump_on);
+
+        // 3. Читаем ультразвуковой датчик
+        float water_distance = get_water_distance_cm();
+
+        if (water_distance > 0) {
+        ESP_LOGI(TAG, "Расстояние до воды: %.2f см", water_distance);
+        } else {
+            ESP_LOGW(TAG, "Ошибка измерения расстояния до воды");
+        }   
         
-        // 3. Отправляем телеметрию раз в 10 секунд
+        // 4. Отправляем телеметрию раз в 10 секунд
         if (tick_count >= 30) { // 30 * 2 секунды = 60 секунд
             int temp = read_htu21d(HTU21D_TEMP_CMD); // твой код чтения 
             int hum = read_htu21d(HTU21D_HUMIDITY_CMD);
@@ -251,7 +319,6 @@ void app_main(void) {
             ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw));
 
             send_to_blynk(temp, hum, cms_raw);
-            
             tick_count = 0; // Сбрасываем счетчик
         }
 

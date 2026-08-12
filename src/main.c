@@ -41,6 +41,10 @@ static const char *TAG = "GROW_HW_TEST";
 #define TRIG_PIN 14
 #define ECHO_PIN 2
 
+// Константы для калибровки уровня воды (в сантиметрах)
+#define DISTANCE_EMPTY_CM 16.0f
+#define DISTANCE_FULL_CM 7.0f
+
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
 // ---------------------------------------------------------
@@ -129,11 +133,11 @@ void wifi_init(void) {
 // ---------------------------------------------------------
 // ОТПРАВКА ДАННЫХ В BLYNK (HTTP REST API)
 // ---------------------------------------------------------
-void send_to_blynk(int temp, int hum, int cms_raw) {
+void send_to_blynk(int temp, int hum, int cms_raw, int water_percentage) {
     char url[256];
     // Собираем строку запроса с нашими переменными
-    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V0=%d&V1=%d&V2=%d", 
-             BLYNK_TOKEN, temp, hum, cms_raw);
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V0=%d&V1=%d&V2=%d&V4=%d", 
+             BLYNK_TOKEN, temp, hum, cms_raw, water_percentage);
 
     esp_http_client_config_t config = {
         .url = url,
@@ -144,7 +148,7 @@ void send_to_blynk(int temp, int hum, int cms_raw) {
     esp_err_t err = esp_http_client_perform(client);
     
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Успех BLYNK: T=%d, H=%d, CMS=%d", temp, hum, cms_raw);
+        ESP_LOGI(TAG, "Успех BLYNK: T=%d, H=%d, CMS=%d, Water=%d", temp, hum, cms_raw, water_percentage);
     } else {
         ESP_LOGE(TAG, "Ошибка отправки: %s", esp_err_to_name(err));
     }
@@ -162,39 +166,33 @@ int read_blynk_button(void) {
         .url = url,
         .method = HTTP_METHOD_GET,
     };
-    
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    int button_state = 0;
-    
-    // 1. Открываем соединение (0 - означает стандартную длину)
-    if (esp_http_client_open(client, 0) == ESP_OK) {
-        
-        // 2. Получаем системные заголовки от сервера
-        esp_http_client_fetch_headers(client);
-        
-        // 3. Читаем само тело ответа
-        char response[16] = {0};
-        int read_bytes = esp_http_client_read(client, response, sizeof(response) - 1);
-        
-        if (read_bytes > 0) {
-            ESP_LOGI(TAG, "Сырой ответ от Blynk (V3): '%s'", response);
-            
-            // Проверяем наличие единицы в ответе
-            if (strchr(response, '1') != NULL) {
-                button_state = 1;
+    int button_state = 0; // По умолчанию считаем, что кнопка выключена
+
+    // 1. Выполняем HTTP-запрос к серверу
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        int content_length = esp_http_client_get_content_length(client);
+        if (content_length > 0) {
+            char buffer[16] = {0};
+            // 2. Читаем ответ сервера (Blynk присылает "1" или "0")
+            int read_len = esp_http_client_read(client, buffer, sizeof(buffer) - 1);
+            if (read_len > 0) {
+                buffer[read_len] = '\0';
+                // 3. Переводим текст в число и сохраняем состояние
+                button_state = atoi(buffer);
             }
-        } else {
-            ESP_LOGW(TAG, "Сервер ответил, но тело ответа пустое");
         }
     } else {
-        ESP_LOGE(TAG, "Не удалось открыть HTTP соединение для чтения");
+        // Если нет интернета или сервер недоступен
+        ESP_LOGW("BLYNK", "Ошибка получения состояния кнопки: %s", esp_err_to_name(err));
     }
-    
-    // 4. Обязательно закрываем поток и очищаем память
-    esp_http_client_close(client);
+
+    // 4. Обязательно очищаем память
     esp_http_client_cleanup(client);
-    
-    return button_state;
+
+    return button_state; // Вернет 1, если кнопка нажата, и 0, если выключена
 }
 
 // ---------------------------------------------------------
@@ -247,6 +245,57 @@ float get_water_distance_cm(void) {
     return distance_cm;
 }
 
+// Функция сортировки для фильтра
+int compare_floats(const void *a, const void *b) {
+    float fa = *(const float*) a;
+    float fb = *(const float*) b;
+    return (fa > fb) - (fa < fb);
+}
+
+// Новая функция, которую нужно вызывать в главном цикле
+float get_stable_water_level(void) {
+    const int NUM_READINGS = 20;
+    float readings[NUM_READINGS];
+    int valid_count = 0;
+
+    // Делаем 20 быстрых замеров
+    for (int i = 0; i < NUM_READINGS; i++) {
+        float dist = get_water_distance_cm(); // Твоя базовая функция
+        if (dist > 0 && dist < 400) {         // Отсекаем явный бред (таймауты)
+            readings[valid_count] = dist;
+            valid_count++;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));        // Обязательная пауза 100мс, чтобы звук в баке утих!
+    }
+
+    // Если всё плохо и датчик отвалился
+    if (valid_count == 0) return -1.0; 
+    
+    // Если есть данные - сортируем их
+    qsort(readings, valid_count, sizeof(float), compare_floats);
+
+    // Возвращаем значение из середины отсортированного списка
+    return readings[valid_count / 2]; 
+}
+
+// Функция маппинга
+int get_water_percentage(float current_distance) {
+    // 1. Ограничиваем (clamp) значения, чтобы не вылезти за 0-100%
+    if (current_distance > DISTANCE_EMPTY_CM) {
+        current_distance = DISTANCE_EMPTY_CM;
+    }
+    if (current_distance < DISTANCE_FULL_CM) {
+        current_distance = DISTANCE_FULL_CM;
+    }
+
+    // 2. Сама математика (инвертированная, так как чем меньше см, тем больше воды)
+    // (16 - текущая_дистанция) / (16 - 6) * 100
+    float percentage = ((DISTANCE_EMPTY_CM - current_distance) / (DISTANCE_EMPTY_CM - DISTANCE_FULL_CM)) * 100.0f;
+
+    // 3. Округляем до математически правильного целого числа и возвращаем
+    return (int)(percentage + 0.5f);
+}
+
 // ---------------------------------------------------------
 // ТОЧКА ВХОДА (Главная программа)
 // ---------------------------------------------------------
@@ -284,7 +333,7 @@ void app_main(void) {
     // Настраиваем 11dB (позволяет читать напряжения от 0 до ~3.1V)
     adc_oneshot_chan_cfg_t config = {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .atten = ADC_ATTEN_DB_11, 
+        .atten = ADC_ATTEN_DB_12, 
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHAN, &config));
     ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", ADC_CHAN);
@@ -295,34 +344,36 @@ void app_main(void) {
     int tick_count = 0;
 
     while (1) {
-        // 1. Опрашиваем кнопку из облака каждые 2 секунды
+        // 1. Опрашиваем кнопку из облака каждые 10 секунды
         int pump_on = read_blynk_button();
         
         // 2. Включаем или выключаем физический пин
         gpio_set_level(PUMP_PIN, pump_on);
 
         // 3. Читаем ультразвуковой датчик
-        float water_distance = get_water_distance_cm();
+        float water_distance = get_stable_water_level();
 
         if (water_distance > 0) {
         ESP_LOGI(TAG, "Расстояние до воды: %.2f см", water_distance);
+            int water_percentage = get_water_percentage(water_distance);
+            ESP_LOGI(TAG, "Уровень воды: %d%%", water_percentage);
         } else {
             ESP_LOGW(TAG, "Ошибка измерения расстояния до воды");
         }   
         
         // 4. Отправляем телеметрию раз в 10 секунд
-        if (tick_count >= 30) { // 30 * 2 секунды = 60 секунд
+        if (tick_count >= 3) { // 3 * 10 секунд = 30 секунд
             int temp = read_htu21d(HTU21D_TEMP_CMD); // твой код чтения 
             int hum = read_htu21d(HTU21D_HUMIDITY_CMD);
-            
             int cms_raw = 0;
+            int water_percentage = get_water_percentage(water_distance);
             ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw));
 
-            send_to_blynk(temp, hum, cms_raw);
+            send_to_blynk(temp, hum, cms_raw, water_percentage);
             tick_count = 0; // Сбрасываем счетчик
         }
 
         tick_count++;
-        vTaskDelay(pdMS_TO_TICKS(2000)); // Базовая пауза цикла 2 секунды
+        vTaskDelay(pdMS_TO_TICKS(10000)); // Базовая пауза цикла 10 секунды
     }
 }

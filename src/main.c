@@ -11,14 +11,16 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"       // Для точного отсчета времени
 #include "rom/ets_sys.h"     // Для функции задержки ets_delay_us
+#include "driver/ledc.h"
+#include "esp_log.h" 
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
 
 // --- НАСТРОЙКИ Wi-Fi & BLYNK ---
 #define WIFI_SSID "xBocT1k_2.4G"
-#define WIFI_PASS "321678tp" // Ваш пароль Wi-Fi
-#define BLYNK_TOKEN "qze49yChk3AqZvcgMR5Opb-PTb62sP_B"  // Ваш токен Blynk
+#define WIFI_PASS "******" // Ваш пароль Wi-Fi
+#define BLYNK_TOKEN "******"  // Ваш токен Blynk
 
 // --- НАСТРОЙКИ ПИНОВ ---
 #define I2C_MASTER_SDA_IO       11      // GP11
@@ -48,6 +50,14 @@ static const char *TAG = "GROW_HW_TEST";
 // Константы для калибровки уровня воды (в сантиметрах)
 #define DISTANCE_EMPTY_CM 16.0f
 #define DISTANCE_FULL_CM 7.0f
+
+// --- НАСТРОЙКИ ШИМ ---
+#define PWM_TIMER              LEDC_TIMER_0
+#define PWM_MODE               LEDC_LOW_SPEED_MODE
+#define PWM_OUTPUT_IO          (17)                // Замени на тот GPIO, куда подключишь конвертер
+#define PWM_CHANNEL            LEDC_CHANNEL_0
+#define PWM_DUTY_RES           LEDC_TIMER_8_BIT   // Разрешение 8 бит (диапазон 0 - 255)
+#define PWM_FREQUENCY          (1000)             // 1 кГц обычно идеально для таких конвертеров
 
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
@@ -303,6 +313,93 @@ int get_water_percentage(float current_distance) {
     return (int)(percentage + 0.5f);
 }
 
+// 1. Инициализация ШИМ (вызвать один раз внутри app_main)
+void init_pwm_converter(void) {
+    // Настройка таймера
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = PWM_MODE,
+        .timer_num        = PWM_TIMER,
+        .duty_resolution  = PWM_DUTY_RES,
+        .freq_hz          = PWM_FREQUENCY, 
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Настройка канала и привязка к пину
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode     = PWM_MODE,
+        .channel        = PWM_CHANNEL,
+        .timer_sel      = PWM_TIMER,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = PWM_OUTPUT_IO,
+        .duty           = 0, // При старте выдаем 0 (0 Вольт на выходе)
+        .hpoint         = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+    
+    ESP_LOGI("PWM", "ШИМ конвертер инициализирован на пине %d", PWM_OUTPUT_IO);
+}
+
+// 2. Функция маппинга (вызывать при получении данных от ползунка Blynk)
+void set_converter_level(int slider_value) {
+    // Жестко ограничиваем входные данные (от 0 до 10)
+    if (slider_value < 0) slider_value = 0;
+    if (slider_value > 10) slider_value = 10;
+
+    // Конвертируем уровень (0-10) в скважность (0-255)
+    // Умножаем на 25.5 для равномерного шага
+    uint32_t duty = (uint32_t)(slider_value * 25.5f);
+
+    // Применяем новые настройки к железу
+    ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, PWM_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(PWM_MODE, PWM_CHANNEL));
+    
+    ESP_LOGI("PWM", "Уровень: %d/10 -> Скважность: %lu/255", slider_value, (unsigned long)duty);
+}
+
+int read_blynk_slider(void) {
+    char url[256];
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/get?token=%s&V5", BLYNK_TOKEN);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_GET,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    int button_slider = 0;
+    
+    // 1. Открываем соединение (0 - означает стандартную длину)
+    if (esp_http_client_open(client, 0) == ESP_OK) {
+        
+        // 2. Получаем системные заголовки от сервера
+        esp_http_client_fetch_headers(client);
+        
+        // 3. Читаем само тело ответа
+        char response[16] = {0};
+        int read_bytes = esp_http_client_read(client, response, sizeof(response) - 1);
+        
+        if (read_bytes > 0) {            
+            // Проверяем наличие числа в ответе
+            button_slider = atoi(response); // Преобразуем строку в число
+            if (button_slider < 0 || button_slider > 10) {
+                ESP_LOGW("BLYNK", "Получено некорректное значение ползунка: %d", button_slider);
+                button_slider = 0; // Сбрасываем до безопасного значения
+        }
+        }
+    } else {
+        // Если нет интернета или сервер недоступен
+        esp_err_t err = esp_http_client_perform(client);
+        ESP_LOGW("BLYNK", "Ошибка получения состояния кнопки: %s", esp_err_to_name(err));
+    }
+
+    // 4. Обязательно очищаем память
+    esp_http_client_cleanup(client);
+
+    return button_slider; // Вернет значение ползунка от 0 до 10
+}
+
+
 // ---------------------------------------------------------
 // ТОЧКА ВХОДА (Главная программа)
 // ---------------------------------------------------------
@@ -348,15 +445,19 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Начинаем опрос сенсоров...\n");
 
+    init_pwm_converter(); // Инициализация ШИМ для конвертера
+
     // 3. Бесконечный цикл опроса
     int tick_count = 0;
 
     while (1) {
-        // 1. Опрашиваем кнопку из облака каждые 10 секунды
+        // 1. Опрашиваем BLYNK на предмет состояния кнопки и ползунка
         int pump_on = read_blynk_button();
-        
-        // 2. Включаем или выключаем физический пин
+        int button_slider = read_blynk_slider();
+
+        // 2. Включаем или выключаем физические пины
         gpio_set_level(PUMP_PIN, pump_on);
+        set_converter_level(button_slider);
 
         // 3. Читаем ультразвуковой датчик
         float water_distance = get_stable_water_level();

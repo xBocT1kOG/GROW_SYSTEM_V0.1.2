@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "nvs_flash.h"       // Энергонезависимая память (нужна для Wi-Fi)
@@ -20,21 +20,14 @@ static const char *TAG = "GROW_HW_TEST";
 // --- НАСТРОЙКИ Wi-Fi & BLYNK ---
 #define WIFI_SSID "xBocT1k_2.4G"
 #define WIFI_PASS "******" // Ваш пароль Wi-Fi
-#define BLYNK_TOKEN "******"  // Ваш токен Blynk
+#define BLYNK_TOKEN "*******"  // Ваш токен Blynk
 
 // --- НАСТРОЙКИ ПИНОВ ---
 #define I2C_MASTER_SDA_IO       11      // GP11
 #define I2C_MASTER_SCL_IO       12      // GP12
 #define I2C_MASTER_NUM          I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ      100000  // Стандартная скорость I2C
-#define I2C_MASTER_TIMEOUT_MS   1000
-
+#define GY21_ADDR               0x40    // Адрес датчика GY-21 (HTU21D)
 #define ADC_CHAN                ADC_CHANNEL_3 // GP4 соответствует ADC1_CH3
-
-// --- КОМАНДЫ GY-21 (HTU21D) ---
-#define HTU21D_ADDR             0x40
-#define HTU21D_TEMP_CMD         0xE3
-#define HTU21D_HUMIDITY_CMD     0xE5
 
 // Наш цифровой пин для насоса
 #define PUMP_PIN 13 
@@ -59,52 +52,58 @@ static const char *TAG = "GROW_HW_TEST";
 #define PWM_DUTY_RES           LEDC_TIMER_8_BIT   // Разрешение 8 бит (диапазон 0 - 255)
 #define PWM_FREQUENCY          (1000)             // 1 кГц обычно идеально для таких конвертеров
 
+// Хэндлы для управления шиной и конкретным устройством на ней
+i2c_master_bus_handle_t bus_handle;
+i2c_master_dev_handle_t gy21_handle;
+
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
 // ---------------------------------------------------------
-static esp_err_t i2c_master_init(void) {
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = I2C_MASTER_SDA_IO,
+void init_i2c_master(void) {
+    // Настройка физической шины
+    i2c_master_bus_config_t i2c_mst_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_0,
         .scl_io_num = I2C_MASTER_SCL_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_MASTER_FREQ_HZ,
+        .sda_io_num = I2C_MASTER_SDA_IO,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
     };
-    i2c_param_config(I2C_MASTER_NUM, &conf);
-    return i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
+
+    // Добавление датчика GY-21 на шину
+    i2c_device_config_t gy21_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = GY21_ADDR,
+        .scl_speed_hz = 100000, // Стандартная скорость 100 кГц
+    };
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &gy21_config, &gy21_handle));
 }
 
 // ---------------------------------------------------------
 // Функция чтения данных с GY-21
 // ---------------------------------------------------------
-float read_htu21d(uint8_t cmd) {
+void read_gy21_data(float *temperature, float *humidity) {
+    uint8_t cmd_temp = 0xF3; 
+    uint8_t cmd_hum = 0xF5;  
     uint8_t data[3];
+
+    // Чтение температуры
+    i2c_master_transmit(gy21_handle, &cmd_temp, 1, -1);
+    vTaskDelay(pdMS_TO_TICKS(50)); // Ожидание конвертации аппаратно
+    i2c_master_receive(gy21_handle, data, 3, -1);
     
-    // Отправляем команду на измерение
-    i2c_master_write_to_device(I2C_MASTER_NUM, HTU21D_ADDR, &cmd, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    
-    // Ждем 50мс, пока датчик сделает замер
-    ets_delay_us(50000); // Используем функцию задержки из ROM
-    
-    // Читаем 3 байта (2 байта данных + 1 байт контрольной суммы)
-    esp_err_t err = i2c_master_read_from_device(I2C_MASTER_NUM, HTU21D_ADDR, data, 3, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Ошибка чтения I2C!");
-        return -999.0; // Возвращаем ошибку
-    }
-    
-    // Склеиваем байты и зануляем биты статуса
-    uint16_t raw_val = (data[0] << 8) | data[1];
-    raw_val &= 0xFFFC; 
-    
-    // Конвертируем сырые данные по даташиту HTU21D
-    if (cmd == HTU21D_TEMP_CMD) {
-        return -46.85 + (175.72 * raw_val / 65536.0);
-    } else {
-        return -6.0 + (125.0 * raw_val / 65536.0);
-    }
+    // Сборка двух байт (MSB и LSB) и вычисление по даташиту
+    uint16_t raw_temp = (data[0] << 8) | (data[1] & 0xFC);
+    *temperature = -46.85 + (175.72 * raw_temp / 65536.0);
+
+    // Чтение влажности
+    i2c_master_transmit(gy21_handle, &cmd_hum, 1, -1);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    i2c_master_receive(gy21_handle, data, 3, -1);
+
+    uint16_t raw_hum = (data[0] << 8) | (data[1] & 0xFC);
+    *humidity = -6.0 + (125.0 * raw_hum / 65536.0);
 }
 
 // ---------------------------------------------------------
@@ -423,8 +422,8 @@ void app_main(void) {
     // Ждем 5 секунд, чтобы Wi-Fi успел подключиться
     vTaskDelay(pdMS_TO_TICKS(5000));
 
-    // 1. Инициализация I2C (GY-21)
-    ESP_ERROR_CHECK(i2c_master_init());
+    // 1. Инициализация I2C
+    init_i2c_master();
     ESP_LOGI(TAG, "Шина I2C инициализирована на пинах %d (SDA) и %d (SCL)", I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
 
     // 2. Инициализация ADC1 (Емкостной датчик)
@@ -438,12 +437,9 @@ void app_main(void) {
     adc_oneshot_chan_cfg_t config = {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
         .atten = ADC_ATTEN_DB_12, 
-        .atten = ADC_ATTEN_DB_12, 
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHAN, &config));
     ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", ADC_CHAN);
-
-    ESP_LOGI(TAG, "Начинаем опрос сенсоров...\n");
 
     init_pwm_converter(); // Инициализация ШИМ для конвертера
 
@@ -451,9 +447,14 @@ void app_main(void) {
     int tick_count = 0;
 
     while (1) {
-        // 1. Опрашиваем BLYNK на предмет состояния кнопки и ползунка
+        // 1. Опрашиваем BLYNK и датчики
         int pump_on = read_blynk_button();
         int button_slider = read_blynk_slider();
+        float temp = 0, hum = 0;
+        read_gy21_data(&temp, &hum);
+        int cms_raw = 0;
+        adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw);
+        int water_percentage = get_water_percentage(water_distance);
 
         // 2. Включаем или выключаем физические пины
         gpio_set_level(PUMP_PIN, pump_on);
@@ -472,12 +473,6 @@ void app_main(void) {
         
         // 4. Отправляем телеметрию раз в 10 секунд
         if (tick_count >= 2) { // 2 * 5 секунд = 10 секунд
-            int temp = read_htu21d(HTU21D_TEMP_CMD); // твой код чтения 
-            int hum = read_htu21d(HTU21D_HUMIDITY_CMD);
-            int cms_raw = 0;
-            int water_percentage = get_water_percentage(water_distance);
-            ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw));
-
             send_to_blynk(temp, hum, cms_raw, water_percentage);
             tick_count = 0; // Сбрасываем счетчик
         }

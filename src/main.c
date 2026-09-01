@@ -13,6 +13,7 @@
 #include "rom/ets_sys.h"     // Для функции задержки ets_delay_us
 #include "driver/ledc.h"
 #include "esp_log.h" 
+#include "oled_simple.h"
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
@@ -20,7 +21,7 @@ static const char *TAG = "GROW_HW_TEST";
 // --- НАСТРОЙКИ Wi-Fi & BLYNK ---
 #define WIFI_SSID "xBocT1k_2.4G"
 #define WIFI_PASS "******" // Ваш пароль Wi-Fi
-#define BLYNK_TOKEN "*******"  // Ваш токен Blynk
+#define BLYNK_TOKEN "******"  // Ваш токен Blynk
 
 // --- НАСТРОЙКИ ПИНОВ ---
 #define I2C_MASTER_SDA_IO       11      // GP11
@@ -55,6 +56,12 @@ static const char *TAG = "GROW_HW_TEST";
 // Хэндлы для управления шиной и конкретным устройством на ней
 i2c_master_bus_handle_t bus_handle;
 i2c_master_dev_handle_t gy21_handle;
+i2c_master_dev_handle_t oled_handle;
+
+// Глобальные переменные для вывода на экран по кнопке
+volatile int temp = 0;
+volatile int hum = 0;
+volatile int cms_raw = 0;
 
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
@@ -71,13 +78,20 @@ void init_i2c_master(void) {
     };
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
 
-    // Добавление датчика GY-21 на шину
+    // Добавление датчика GY-21 и OLED-дисплея на шину 
     i2c_device_config_t gy21_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = GY21_ADDR,
         .scl_speed_hz = 100000, // Стандартная скорость 100 кГц
     };
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &gy21_config, &gy21_handle));
+
+    i2c_device_config_t oled_cfg = { 
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7, 
+        .device_address = 0x3C, 
+        .scl_speed_hz = 100000 
+    };
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &oled_cfg, &oled_handle));
 }
 
 // ---------------------------------------------------------
@@ -398,6 +412,26 @@ int read_blynk_slider(void) {
     return button_slider; // Вернет значение ползунка от 0 до 10
 }
 
+// Функция вывода данных на OLED-дисплей
+void display_task(void *pvParameters) {
+    char buffer[32];
+    while (1) {
+        oled_init(oled_handle); 
+        oled_clear(oled_handle);
+
+        snprintf(buffer, sizeof(buffer), "Temp: %d C", temp);
+        oled_print(oled_handle, 0, 0, buffer);
+
+        snprintf(buffer, sizeof(buffer), "Hum: %d %%", hum);
+        oled_print(oled_handle, 0, 3, buffer);
+
+        snprintf(buffer, sizeof(buffer), "CMS: %d %%", cms_raw);
+        oled_print(oled_handle, 0, 6, buffer);
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        oled_clear(oled_handle);
+    }
+}
 
 // ---------------------------------------------------------
 // ТОЧКА ВХОДА (Главная программа)
@@ -446,6 +480,9 @@ void app_main(void) {
     // 3. Бесконечный цикл опроса
     int tick_count = 0;
 
+    // Запускаем задачу экрана (выделяем 4096 байт памяти, средний приоритет)
+    xTaskCreate(display_task, "oled_task", 4096, NULL, 5, NULL);
+
     while (1) {
         // 1. Опрашиваем BLYNK и датчики
         int pump_on = read_blynk_button();
@@ -454,7 +491,7 @@ void app_main(void) {
         read_gy21_data(&temp, &hum);
         int cms_raw = 0;
         adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw);
-        int water_percentage = get_water_percentage(water_distance);
+        int water_percentage = get_water_percentage(get_stable_water_level());
 
         // 2. Включаем или выключаем физические пины
         gpio_set_level(PUMP_PIN, pump_on);

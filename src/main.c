@@ -13,15 +13,15 @@
 #include "rom/ets_sys.h"     // Для функции задержки ets_delay_us
 #include "driver/ledc.h"
 #include "esp_log.h" 
-#include "oled_simple.h"
+#include "SSD1306_CustomLib.h"
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
 
 // --- НАСТРОЙКИ Wi-Fi & BLYNK ---
 #define WIFI_SSID "xBocT1k_2.4G"
-#define WIFI_PASS "******" // Ваш пароль Wi-Fi
-#define BLYNK_TOKEN "******"  // Ваш токен Blynk
+#define WIFI_PASS "321678tp" // Ваш пароль Wi-Fi
+#define BLYNK_TOKEN "qze49yChk3AqZvcgMR5Opb-PTb62sP_B"  // Ваш токен Blynk
 
 // --- НАСТРОЙКИ ПИНОВ ---
 #define I2C_MASTER_SDA_IO       11      // GP11
@@ -41,10 +41,6 @@ static const char *TAG = "GROW_HW_TEST";
 #define DISTANCE_EMPTY_CM 16.0f
 #define DISTANCE_FULL_CM 7.0f
 
-// Константы для калибровки уровня воды (в сантиметрах)
-#define DISTANCE_EMPTY_CM 16.0f
-#define DISTANCE_FULL_CM 7.0f
-
 // --- НАСТРОЙКИ ШИМ ---
 #define PWM_TIMER              LEDC_TIMER_0
 #define PWM_MODE               LEDC_LOW_SPEED_MODE
@@ -59,9 +55,10 @@ i2c_master_dev_handle_t gy21_handle;
 i2c_master_dev_handle_t oled_handle;
 
 // Глобальные переменные для вывода на экран по кнопке
-volatile int temp = 0;
-volatile int hum = 0;
+volatile float temp = 0;
+volatile float hum = 0;
 volatile int cms_raw = 0;
+volatile int water_percentage = 0;
 
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
@@ -415,21 +412,31 @@ int read_blynk_slider(void) {
 // Функция вывода данных на OLED-дисплей
 void display_task(void *pvParameters) {
     char buffer[32];
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Ждем, чтобы шина I2C успела инициализироваться
+    oled_init();
+    oled_clear();
+
+    oled_print(3, 3, "GROW SYSTEM V0.1.2");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    oled_print(5, 3, "MADE BY HUP&KIRILL");
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    oled_clear();
+
     while (1) {
-        oled_init(oled_handle); 
-        oled_clear(oled_handle);
 
-        snprintf(buffer, sizeof(buffer), "Temp: %d C", temp);
-        oled_print(oled_handle, 0, 0, buffer);
+        snprintf(buffer, sizeof(buffer), "TEMP: %d C  ", (int)temp);
+        oled_print(0, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "Hum: %d %%", hum);
-        oled_print(oled_handle, 0, 3, buffer);
+        snprintf(buffer, sizeof(buffer), "HUM: %d %%  ", (int)hum);
+        oled_print(2, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "CMS: %d %%", cms_raw);
-        oled_print(oled_handle, 0, 6, buffer);
+        snprintf(buffer, sizeof(buffer), "CMS: %d %%  ", cms_raw);
+        oled_print(4, 1, buffer);
+
+        snprintf(buffer, sizeof(buffer), "WATER: %d %%  ", water_percentage);
+        oled_print(6, 1, buffer);
 
         vTaskDelay(pdMS_TO_TICKS(5000));
-        oled_clear(oled_handle);
     }
 }
 
@@ -487,9 +494,7 @@ void app_main(void) {
         // 1. Опрашиваем BLYNK и датчики
         int pump_on = read_blynk_button();
         int button_slider = read_blynk_slider();
-        float temp = 0, hum = 0;
         read_gy21_data(&temp, &hum);
-        int cms_raw = 0;
         adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw);
         int water_percentage = get_water_percentage(get_stable_water_level());
 

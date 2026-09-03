@@ -14,14 +14,16 @@
 #include "driver/ledc.h"
 #include "esp_log.h" 
 #include "SSD1306_CustomLib.h"
+#include <time.h>
+#include "esp_sntp.h"
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
 
 // --- НАСТРОЙКИ Wi-Fi & BLYNK ---
 #define WIFI_SSID "xBocT1k_2.4G"
-#define WIFI_PASS "321678tp" // Ваш пароль Wi-Fi
-#define BLYNK_TOKEN "qze49yChk3AqZvcgMR5Opb-PTb62sP_B"  // Ваш токен Blynk
+#define WIFI_PASS "******" // Ваш пароль Wi-Fi
+#define BLYNK_TOKEN "******"  // Ваш токен Blynk
 
 // --- НАСТРОЙКИ ПИНОВ ---
 #define I2C_MASTER_SDA_IO       11      // GP11
@@ -54,11 +56,17 @@ i2c_master_bus_handle_t bus_handle;
 i2c_master_dev_handle_t gy21_handle;
 i2c_master_dev_handle_t oled_handle;
 
-// Глобальные переменные для вывода на экран по кнопке
+// Глобальные переменные
 volatile float temp = 0;
 volatile float hum = 0;
 volatile int cms_raw = 0;
 volatile int water_percentage = 0;
+volatile int max_light = 6; // Максимальный уровень освещения (0-10), по умолчанию 6
+volatile int sunrise_start = 6; // Время начала рассвета (6 утра)
+volatile int sunset_start = 20; // Время начала заката (20 вечера)
+const char * volatile current_mode = "IDLE"; // Текущий режим работы
+volatile int current_light_level = 0; // Текущий уровень освещения (0-10)
+volatile int sun_period = 1200000; // Период проверки времени (20 минут в миллисекундах)
 
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
@@ -152,6 +160,15 @@ void wifi_init(void) {
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // --- Инициализация службы времени (NTP) ---
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+
+    // Установка локального часового пояса с автоматическим переходом на летнее/зимнее время
+    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
+    tzset();
 }
 
 // ---------------------------------------------------------
@@ -180,9 +197,34 @@ void send_to_blynk(int temp, int hum, int cms_raw, int water_percentage) {
 }
 
 // ---------------------------------------------------------
+// ОТПРАВКА ДАННЫХ В BLYNK (HTTP REST API) - ПОЛЗУНОК
+// ---------------------------------------------------------
+void send_to_blynk_slyder_button(int current_light_level) {
+    char url[256];
+    // Собираем строку запроса с нашими переменными
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V5=%d", 
+             BLYNK_TOKEN, current_light_level);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_GET,
+    };
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t err = esp_http_client_perform(client);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Успех BLYNK: V5=%d", current_light_level);
+    } else {
+        ESP_LOGE(TAG, "Ошибка отправки: %s", esp_err_to_name(err));
+    }
+    esp_http_client_cleanup(client);
+}
+
+// ---------------------------------------------------------
 // ЧТЕНИЕ ДАННЫХ ИЗ BLYNK (Кнопка насоса) - ИСПРАВЛЕННОЕ
 // ---------------------------------------------------------
-int read_blynk_button(void) {
+int read_blynk_pump_button(void) {
     char url[256];
     snprintf(url, sizeof(url), "http://blynk.cloud/external/api/get?token=%s&V3", BLYNK_TOKEN);
 
@@ -424,19 +466,79 @@ void display_task(void *pvParameters) {
 
     while (1) {
 
-        snprintf(buffer, sizeof(buffer), "TEMP: %d C  ", (int)temp);
+        snprintf(buffer, sizeof(buffer), "TEMP: %dC ", (int)temp);
         oled_print(0, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "HUM: %d %%  ", (int)hum);
+        snprintf(buffer, sizeof(buffer), "HUM: %d%% ", (int)hum);
         oled_print(2, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "CMS: %d %%  ", cms_raw);
+        snprintf(buffer, sizeof(buffer), "CMS: %d%%  ", cms_raw);
         oled_print(4, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "WATER: %d %%  ", water_percentage);
+        snprintf(buffer, sizeof(buffer), "WATER: %d%%  ", water_percentage);
         oled_print(6, 1, buffer);
 
+        snprintf(buffer, sizeof(buffer), "LIGHT: %d0%% ", current_light_level);
+        oled_print(0, 63, buffer);
+
+        snprintf(buffer, sizeof(buffer), "MODE: %s ", current_mode);
+        oled_print(2, 63, buffer);
+
         vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
+// Функция получения текущего часа (0-23) с учетом локального часового пояса
+int get_current_hour(void) {
+    time_t now;
+    struct tm timeinfo;
+    
+    // Получаем текущее системное время (в секундах)
+    time(&now);
+    
+    // Преобразуем секунды в структуру с часами, минутами и днями 
+    // с учетом локального часового пояса
+    localtime_r(&now, &timeinfo);
+    
+    // tm_hour всегда возвращает int в диапазоне от 0 до 23
+    return timeinfo.tm_hour;
+}
+
+void auto_light(void *pvParameters) {
+    while (1) {
+        int current_hour = get_current_hour(); // Получаем текущий час (0-23)
+        current_light_level = read_blynk_slider(); // Получаем уровень освещения из Blynk
+
+        // Если текущее время находится между рассветом и закатом
+        if (current_hour >= sunrise_start && current_hour < sunset_start) {
+            current_light_level = read_blynk_slider(); // Получаем уровень освещения из Blynk
+            if (current_light_level < max_light) {
+                current_light_level += 1; // Постепенно увеличиваем уровень освещения
+                set_converter_level(current_light_level);
+                send_to_blynk_slyder_button(current_light_level); // Отправляем обновленный уровень в Blynk
+                ESP_LOGI(TAG, "Уровень освещения обновлен: %d", current_light_level);
+                current_mode = "DAWN"; // Устанавливаем режим в "рассвет"
+            }
+            }
+        // Если текущее время находится между закатом и рассветом
+        else if (current_hour >= sunset_start || current_hour < sunrise_start) {
+            current_light_level = read_blynk_slider(); // Получаем уровень освещения из Blynk
+            if (current_light_level > 0) {
+                current_light_level -= 1; // Постепенно уменьшаем уровень освещения
+                set_converter_level(current_light_level);
+                send_to_blynk_slyder_button(current_light_level); // Отправляем обновленный уровень в Blynk
+                ESP_LOGI(TAG, "Уровень освещения обновлен: %d", current_light_level);
+                current_mode = "DUSK"; // Устанавливаем режим в "закат"
+                
+            }
+        }
+
+        else {
+            ESP_LOGI(TAG, "Текущее время вне диапазона рассвета и заката. Освещение не изменяется.");
+            current_mode = "IDLE"; // Устанавливаем режим в "ожидание"
+             
+        }
+        vTaskDelay(pdMS_TO_TICKS(sun_period)); // Ждем 20 минут
     }
 }
 
@@ -489,10 +591,13 @@ void app_main(void) {
 
     // Запускаем задачу экрана (выделяем 4096 байт памяти, средний приоритет)
     xTaskCreate(display_task, "oled_task", 4096, NULL, 5, NULL);
+    
+    // Запускаем задачу автоматического управления освещением (выделяем 4096 байт памяти, средний приоритет)
+    xTaskCreate(auto_light, "auto_light_task", 4096, NULL, 5, NULL);
 
     while (1) {
         // 1. Опрашиваем BLYNK и датчики
-        int pump_on = read_blynk_button();
+        int pump_on = read_blynk_pump_button();
         int button_slider = read_blynk_slider();
         read_gy21_data(&temp, &hum);
         adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw);

@@ -16,6 +16,8 @@
 #include "SSD1306_CustomLib.h"
 #include <time.h>
 #include "esp_sntp.h"
+#include "freertos/queue.h"
+#include "esp_timer.h"
 
 // Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
@@ -31,6 +33,7 @@ static const char *TAG = "GROW_HW_TEST";
 #define I2C_MASTER_NUM          I2C_NUM_0
 #define GY21_ADDR               0x40    // Адрес датчика GY-21 (HTU21D)
 #define ADC_CHAN                ADC_CHANNEL_3 // GP4 соответствует ADC1_CH3
+#define PUMP_BUTTON_PIN              18 // GP18 - пин для кнопки
 
 // Наш цифровой пин для насоса
 #define PUMP_PIN 13 
@@ -55,6 +58,7 @@ static const char *TAG = "GROW_HW_TEST";
 i2c_master_bus_handle_t bus_handle;
 i2c_master_dev_handle_t gy21_handle;
 i2c_master_dev_handle_t oled_handle;
+QueueHandle_t button_queue;
 
 // Глобальные переменные
 volatile float temp = 0;
@@ -67,6 +71,7 @@ volatile int sunset_start = 20; // Время начала заката (20 ве
 const char * volatile current_mode = "IDLE"; // Текущий режим работы
 volatile int current_light_level = 0; // Текущий уровень освещения (0-10)
 volatile int sun_period = 1200000; // Период проверки времени (20 минут в миллисекундах)
+volatile bool pump_state = false;
 
 // ---------------------------------------------------------
 // Функция инициализации I2C мастера
@@ -262,6 +267,31 @@ int read_blynk_pump_button(void) {
     esp_http_client_cleanup(client);
 
     return button_state; // Вернет 1, если кнопка нажата, и 0, если выключена
+}
+
+// ---------------------------------------------------------
+// ОТПРАВКА СОСТОЯНИЯ НАСОСА В BLYNK (HTTP REST API)
+// ---------------------------------------------------------
+void send_to_blynk_pump_state(int pump_state) {
+    char url[256];
+    // Собираем строку запроса с нашими переменными
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V3=%d", 
+             BLYNK_TOKEN, pump_state);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_GET,
+    };
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t err = esp_http_client_perform(client);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Успех BLYNK: V3=%d", pump_state);
+    } else {
+        ESP_LOGE(TAG, "Ошибка отправки: %s", esp_err_to_name(err));
+    }
+    esp_http_client_cleanup(client);
 }
 
 // ---------------------------------------------------------
@@ -484,7 +514,10 @@ void display_task(void *pvParameters) {
         snprintf(buffer, sizeof(buffer), "MODE: %s ", current_mode);
         oled_print(2, 63, buffer);
 
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        snprintf(buffer, sizeof(buffer), "PUMP: %s ", pump_state ? "ON" : "OFF");
+        oled_print(4, 63, buffer);
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -543,6 +576,69 @@ void auto_light(void *pvParameters) {
 }
 
 // ---------------------------------------------------------
+// ОБРАБОТЧИК ПРЕРЫВАНИЯ КНОПКИ (для антидребезга)
+// ---------------------------------------------------------
+static void IRAM_ATTR button_isr_handler(void* arg) {
+    static uint64_t last_isr_time = 0;
+    uint64_t current_time = esp_timer_get_time(); // Время в микросекундах
+
+    // Игнорируем нажатия быстрее 250 мс (250 000 мкс) - антидребезг
+    if (current_time - last_isr_time > 250000) {
+        int pin_num = (int)arg;
+        // Отправляем номер пина в очередь, не блокируя процессор
+        xQueueSendFromISR(button_queue, &pin_num, NULL); 
+        last_isr_time = current_time;
+    }
+}
+
+//---------------------------------------------------------
+// ЗАДАЧА ОБРАБОТКИ НАЖАТИЯ КНОПКИ
+//---------------------------------------------------------
+void pump_button_task(void *pvParameters) {
+    int received_pin;
+    while (1) {
+        // Задача спит, пока в очередь не придет сигнал от прерывания
+        if (xQueueReceive(button_queue, &received_pin, portMAX_DELAY)) {
+            ESP_LOGI(TAG, "Кнопка нажата!");
+
+            // Инвертируем локальное состояние
+            pump_state = !pump_state; 
+
+            // 1. TODO: Включить/выключить физический пин реле насоса
+            gpio_set_level(PUMP_PIN, pump_state);
+
+            // 2. TODO: Отправить новое состояние в Blynk
+            send_to_blynk_pump_state(pump_state);
+        }
+    }
+}
+
+//---------------------------------------------------------
+// ИНИЦИАЛИЗАЦИЯ КНОПКИ С ПРЕРЫВАНИЕМ
+//---------------------------------------------------------
+void pump_button_init(void) {
+    // Создаем очередь на 10 элементов
+    button_queue = xQueueCreate(10, sizeof(int));
+    xTaskCreate(pump_button_task, "pump_button_task", 4096, NULL, 10, NULL);
+
+    // Настраиваем пин кнопки (подтяжка к питанию, срабатывание по падению напряжения)
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << PUMP_BUTTON_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = 1,
+        .pull_down_en = 0,
+        .intr_type = GPIO_INTR_NEGEDGE // Срабатывает при нажатии (замыкании на землю)
+    };
+    gpio_config(&io_conf);
+
+    // Глобальная установка службы прерываний (если еще не была вызвана ранее в коде)
+    ESP_ERROR_CHECK(gpio_install_isr_service(0)); 
+
+    // Привязываем функцию ISR к конкретному пину
+    gpio_isr_handler_add(PUMP_BUTTON_PIN, button_isr_handler, (void*) PUMP_BUTTON_PIN);
+}
+
+// ---------------------------------------------------------
 // ТОЧКА ВХОДА (Главная программа)
 // ---------------------------------------------------------
 void app_main(void) {
@@ -561,6 +657,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(nvs_flash_init());
     nvs_flash_init();
     wifi_init();
+    pump_button_init(); // Инициализация кнопки с прерыванием
 
     // Ждем 5 секунд, чтобы Wi-Fi успел подключиться
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -605,6 +702,7 @@ void app_main(void) {
 
         // 2. Включаем или выключаем физические пины
         gpio_set_level(PUMP_PIN, pump_on);
+        pump_state = pump_on; // Обновляем глобальное состояние насоса
         set_converter_level(button_slider);
 
         // 3. Читаем ультразвуковой датчик

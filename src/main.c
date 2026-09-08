@@ -582,8 +582,8 @@ static void IRAM_ATTR button_isr_handler(void* arg) {
     static uint64_t last_isr_time = 0;
     uint64_t current_time = esp_timer_get_time(); // Время в микросекундах
 
-    // Игнорируем нажатия быстрее 250 мс (250 000 мкс) - антидребезг
-    if (current_time - last_isr_time > 250000) {
+    // Игнорируем нажатия быстрее 1с (1 000 000 мкс) - антидребезг
+    if (current_time - last_isr_time > 1000000) {
         int pin_num = (int)arg;
         // Отправляем номер пина в очередь, не блокируя процессор
         xQueueSendFromISR(button_queue, &pin_num, NULL); 
@@ -694,15 +694,14 @@ void app_main(void) {
 
     while (1) {
         // 1. Опрашиваем BLYNK и датчики
-        int pump_on = read_blynk_pump_button();
+        pump_state = read_blynk_pump_button();
         int button_slider = read_blynk_slider();
         read_gy21_data(&temp, &hum);
         adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw);
         int water_percentage = get_water_percentage(get_stable_water_level());
 
         // 2. Включаем или выключаем физические пины
-        gpio_set_level(PUMP_PIN, pump_on);
-        pump_state = pump_on; // Обновляем глобальное состояние насоса
+        gpio_set_level(PUMP_PIN, pump_state);
         set_converter_level(button_slider);
 
         // 3. Читаем ультразвуковой датчик

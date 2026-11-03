@@ -1,6 +1,75 @@
 # Firmware V0.2 skeleton
 
-## Current status: Stage 6 sensor acquisition
+## Current status: Stage 7 OLED application snapshots
+
+The only active screen owner is `tasks/display_task.c`, started once after the
+existing shared I2C bus and OLED device setup. The old main.c display task is
+removed; its source remains in Git history. There is no second bus, OLED device,
+display task, or initialization sequence.
+
+`SSD1306_CustomLib.h` retains every original register, glyph, addressing,
+initialization, clear, and print sequence. Its only source edits change the two
+global bus/device definitions to `extern`; main.c still owns their definitions.
+The new task preserves the startup banner/delays, then refreshes every
+`DISPLAY_PERIOD_MS` (2000 ms) using `vTaskDelayUntil`.
+
+The original cells use pages 0/2/4/6 and columns 1/63, with unchanged 5+1 pixel
+characters. Each field is padded to ten characters (60 pixels), so smaller
+numbers and ON/OFF transitions erase old suffixes without a frame-wide clear.
+The eight fields are TEMP, HUM, SOIL, WATER, LIGHT_S, LIGHT_A, AUTO, and MOD.
+Physical light labels are `L-S` and `L-A`: full labels at 100% exceed the right
+column width, and the original font has no underscore glyph. No font or layout
+redesign is introduced. Invalid sensors show N/A; previously valid stale data
+continues to follow Stage 6's retention policy.
+
+`app_state_get_snapshot()` returns a full coherent copy. Control_task publishes
+after initialization and after every event, using the existing short critical
+section expanded to cover `app_state_t`. The display copies once per frame,
+then renders without holding a lock. Only control_task writes published state.
+The sensor-only getter remains for legacy telemetry.
+
+TEMP/HUM/SOIL/WATER come from `snapshot.sensors`; LIGHT_S from
+`snapshot.light.system_level_percent`, LIGHT_A from `snapshot.light.actual_percent`
+(with the LDR validity flag), AUTO from `auto_enabled`, and MOD from the enum
+mapped locally to IDLE/DAWN/DUSK. No sensor reads, actuator calls, or application
+state writes occur in the display task. FSM, calibration, and Blynk are unchanged.
+
+A local transport wrapper around the custom library's existing transmit calls
+uses a 100 ms timeout and latches the first error. It preserves transmitted bytes
+and skips further writes after failure. An init/render failure logs once and
+terminates only the display task, without resetting or reinitializing the OLED.
+Device-registration/task-creation errors are logged without aborting main.
+There is no automatic display retry in this stage. The display priority is 3,
+below sensors and control. ESP-IDF still serializes shared I2C transactions;
+no additional I2C mutex is added. An electrical fault that physically holds the
+shared bus can also disrupt HTU21 readings, which retain their bounded-error path.
+
+Host tests use the real formatter and custom library with a recording transport:
+initial command bytes, clearing, page/column addressing, font compatibility,
+cell width, field sources, invalid sensors, and trailing-space clearing pass.
+These checks do not establish physical OLED or bus-fault behavior.
+
+### Stage 7 hardware checklist
+
+- A: Reboot repeatedly: verify the original startup screen, reliable OLED init,
+  no corrupt/duplicate startup artifacts, and no wrap/overlap at 100% values.
+- B: Change temperature, humidity, soil, and water; confirm all four displayed
+  values update on the two-second refresh. Initial invalid readings show N/A.
+- C: Press light +/-: L-S changes by 5%; L-A changes only with measured light.
+  Check 100% to 95%/0% transitions leave no residual glyphs.
+- D: Toggle AUTO: ON/OFF updates without leftover characters.
+- E: Verify MOD reads IDLE, DAWN, and DUSK during the corresponding states.
+- F: Run several minutes with button activity and simultaneous HTU21 reads:
+  control stays responsive, sensors update, and OLED neither freezes nor
+  produces new shared-bus errors.
+- Failure isolation: with the display unavailable at boot or disconnected during
+  refresh, check the single display error and continued buttons, pump, FSM, and
+  sensor-task execution. A stopped display requires reboot after reconnecting.
+
+The future dedicated Blynk LIGHT_A pin remains unassigned. Flash/partition
+settings are unchanged; the existing 16 MB / 2 MB warning remains technical debt.
+
+## Historical Stage 6 sensor acquisition
 
 The user reports local control and basic automatic light behavior checked on
 hardware. Stage 6 itself still requires board validation.

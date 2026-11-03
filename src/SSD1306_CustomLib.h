@@ -2,8 +2,8 @@
 #include <string.h>
 #include "driver/i2c_master.h" // I2C !!!Master!!! Library
 
-i2c_master_bus_handle_t bus_handle;
-i2c_master_dev_handle_t oled_handle;
+extern i2c_master_bus_handle_t bus_handle;
+extern i2c_master_dev_handle_t oled_handle;
 
 // Base font(5x8 pixels per character, only supports ASCII 32-90 -> upper case, digits, and some symbols)
 static const uint8_t font5x8[59][5] = {

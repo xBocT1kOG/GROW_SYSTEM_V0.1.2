@@ -12,8 +12,15 @@
 // ---------------------------------------------------------
 static QueueHandle_t event_queue;
 static const char *TAG = "app_control";
-static sensor_snapshot_t published_sensors;
-static portMUX_TYPE sensor_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
+static app_state_t published_state;
+static portMUX_TYPE state_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static void publish_state(const app_state_t *state)
+{
+    portENTER_CRITICAL(&state_snapshot_lock);
+    published_state = *state;
+    portEXIT_CRITICAL(&state_snapshot_lock);
+}
 
 // ---------------------------------------------------------
 // LOCAL ACTUATOR COMMANDS
@@ -86,9 +93,6 @@ static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
     case APP_EVT_SENSOR_UPDATE:
         state->sensors = event->data.sensors;
         state->light.actual_percent = event->data.sensors.light_actual_percent;
-        portENTER_CRITICAL(&sensor_snapshot_lock);
-        published_sensors = state->sensors;
-        portEXIT_CRITICAL(&sensor_snapshot_lock);
         break;
     case APP_EVT_WIFI_CONNECTED:
         state->wifi_connected = true;
@@ -158,12 +162,14 @@ static void control_task(void *argument)
     };
     app_event_t event;
     light_fsm_context_t fsm = {0};
+    publish_state(&state);
     ESP_LOGI(TAG, "Local control ready: Pump OFF, Light 0%%, Auto OFF");
     ESP_LOGI(TAG, "Time not synced: schedule skipped until SNTP sync");
 
     for (;;) {
         if (xQueueReceive(event_queue, &event, portMAX_DELAY) == pdTRUE) {
             handle_event(&state, &fsm, &event);
+            publish_state(&state);
         }
     }
 }
@@ -213,8 +219,17 @@ esp_err_t app_control_post_event(const app_event_t *event, TickType_t wait_ticks
 esp_err_t app_control_get_sensors(sensor_snapshot_t *snapshot)
 {
     if (snapshot == NULL) return ESP_ERR_INVALID_ARG;
-    portENTER_CRITICAL(&sensor_snapshot_lock);
-    *snapshot = published_sensors;
-    portEXIT_CRITICAL(&sensor_snapshot_lock);
+    portENTER_CRITICAL(&state_snapshot_lock);
+    *snapshot = published_state.sensors;
+    portEXIT_CRITICAL(&state_snapshot_lock);
+    return ESP_OK;
+}
+
+esp_err_t app_state_get_snapshot(app_state_t *snapshot)
+{
+    if (snapshot == NULL) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&state_snapshot_lock);
+    *snapshot = published_state;
+    portEXIT_CRITICAL(&state_snapshot_lock);
     return ESP_OK;
 }

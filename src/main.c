@@ -13,7 +13,7 @@
 #include "rom/ets_sys.h"     // Для функции задержки ets_delay_us
 #include "driver/ledc.h"
 #include "esp_log.h" 
-#include "SSD1306_CustomLib.h"
+#include "tasks/display_task.h"
 #include <time.h>
 #include "esp_sntp.h"
 #include "freertos/queue.h"
@@ -82,7 +82,10 @@ void init_i2c_master(void) {
         .device_address = OLED_I2C_ADDRESS,
         .scl_speed_hz = I2C_CLOCK_HZ
     };
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &oled_cfg, &oled_handle));
+    const esp_err_t oled_err = i2c_master_bus_add_device(bus_handle, &oled_cfg, &oled_handle);
+    if (oled_err != ESP_OK) {
+        ESP_LOGE(TAG, "OLED device setup failed: %s", esp_err_to_name(oled_err));
+    }
 }
 
 // ---------------------------------------------------------
@@ -463,59 +466,7 @@ int read_blynk_slider(void) {
     return button_slider; // Вернет значение ползунка от 0 до 10
 }
 
-// Функция вывода данных на OLED-дисплей
-void display_task(void *pvParameters) {
-    char buffer[32];
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Ждем, чтобы шина I2C успела инициализироваться
-    oled_init();
-    oled_clear();
-
-    oled_print(3, 3, "GROW SYSTEM V0.1.2");
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    oled_print(5, 3, "MADE BY HUP&KIRILL");
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    oled_clear();
-
-    while (1) {
-
-        // Compatibility data source only; OLED rendering remains legacy.
-        sensor_snapshot_t sensors;
-        ESP_ERROR_CHECK(app_control_get_sensors(&sensors));
-        if (sensors.htu21_valid) {
-            snprintf(buffer, sizeof(buffer), "TEMP: %dC   ", (int)sensors.temperature_c);
-        } else {
-            snprintf(buffer, sizeof(buffer), "TEMP: N/A   ");
-        }
-        oled_print(0, 1, buffer);
-
-        if (sensors.htu21_valid) {
-            snprintf(buffer, sizeof(buffer), "HUM: %d%%   ", (int)sensors.humidity_percent);
-        } else {
-            snprintf(buffer, sizeof(buffer), "HUM: N/A   ");
-        }
-        oled_print(2, 1, buffer);
-
-        if (sensors.soil_valid) {
-            snprintf(buffer, sizeof(buffer), "CMS: %d%%   ", sensors.soil_percent);
-        } else {
-            snprintf(buffer, sizeof(buffer), "CMS: N/A   ");
-        }
-        oled_print(4, 1, buffer);
-
-        if (sensors.water_valid) {
-            snprintf(buffer, sizeof(buffer), "WATER: %d%%  ", sensors.water_percent);
-        } else {
-            snprintf(buffer, sizeof(buffer), "WATER: N/A  ");
-        }
-        oled_print(6, 1, buffer);
-
-        // Legacy actuator globals no longer reflect V0.2 commands.
-        oled_print(0, 63, "LOCAL CTRL");
-        oled_print(2, 63, "SEE UART");
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
+// Legacy OLED task moved to tasks/display_task.c; see Git history for reference.
 
 // Функция получения текущего часа (0-23) с учетом локального часового пояса
 int get_current_hour(void) {
@@ -682,9 +633,10 @@ void app_main(void) {
 
     // Legacy PWM initialization disabled; light_pwm_init() ran once above.
 
-    // Preserve legacy OLED rendering and HTTP telemetry as read-only consumers.
-    if (xTaskCreate(display_task, "oled_task", 4096, NULL, 5, NULL) != pdPASS) {
-        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    // Display startup is optional; control and sensors stay active on failure.
+    const esp_err_t display_err = display_task_start();
+    if (display_err != ESP_OK) {
+        ESP_LOGE(TAG, "Display startup failed: %s", esp_err_to_name(display_err));
     }
 
     // Legacy sensor polling/filtering and actuator writers remain disabled.

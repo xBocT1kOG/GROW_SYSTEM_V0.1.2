@@ -50,3 +50,7 @@
 // One task owns all sensor reads; control/input tasks keep higher priority.
 #define SENSOR_TASK_STACK_BYTES       4096
 #define SENSOR_TASK_PRIORITY             4
+
+// Display failures must not block higher-priority control or sensor tasks.
+#define DISPLAY_TASK_STACK_BYTES      4096
+#define DISPLAY_TASK_PRIORITY            3

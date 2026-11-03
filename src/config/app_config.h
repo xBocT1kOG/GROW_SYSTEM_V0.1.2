@@ -46,3 +46,7 @@
 // Time and ramp tasks only publish events.
 #define PERIODIC_TASK_STACK_BYTES     3072
 #define PERIODIC_TASK_PRIORITY           4
+
+// One task owns all sensor reads; control/input tasks keep higher priority.
+#define SENSOR_TASK_STACK_BYTES       4096
+#define SENSOR_TASK_PRIORITY             4

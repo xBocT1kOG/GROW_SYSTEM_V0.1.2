@@ -30,6 +30,15 @@ typedef struct {
     uint8_t water_percent;
     int ldr_raw;
     uint8_t light_actual_percent;
+    // Valid means at least one good reading; errors describe the latest attempt.
+    bool htu21_valid;
+    bool soil_valid;
+    bool ldr_valid;
+    bool water_valid;
+    esp_err_t htu21_error;
+    esp_err_t soil_error;
+    esp_err_t ldr_error;
+    esp_err_t water_error;
 } sensor_snapshot_t;
 
 typedef struct {

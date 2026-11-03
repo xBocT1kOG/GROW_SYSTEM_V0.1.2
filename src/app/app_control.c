@@ -12,6 +12,8 @@
 // ---------------------------------------------------------
 static QueueHandle_t event_queue;
 static const char *TAG = "app_control";
+static sensor_snapshot_t published_sensors;
+static portMUX_TYPE sensor_snapshot_lock = portMUX_INITIALIZER_UNLOCKED;
 
 // ---------------------------------------------------------
 // LOCAL ACTUATOR COMMANDS
@@ -84,6 +86,9 @@ static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
     case APP_EVT_SENSOR_UPDATE:
         state->sensors = event->data.sensors;
         state->light.actual_percent = event->data.sensors.light_actual_percent;
+        portENTER_CRITICAL(&sensor_snapshot_lock);
+        published_sensors = state->sensors;
+        portEXIT_CRITICAL(&sensor_snapshot_lock);
         break;
     case APP_EVT_WIFI_CONNECTED:
         state->wifi_connected = true;
@@ -203,4 +208,13 @@ esp_err_t app_control_post_event(const app_event_t *event, TickType_t wait_ticks
     }
     return xQueueSend(event_queue, event, wait_ticks) == pdTRUE
         ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+esp_err_t app_control_get_sensors(sensor_snapshot_t *snapshot)
+{
+    if (snapshot == NULL) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&sensor_snapshot_lock);
+    *snapshot = published_sensors;
+    portEXIT_CRITICAL(&sensor_snapshot_lock);
+    return ESP_OK;
 }

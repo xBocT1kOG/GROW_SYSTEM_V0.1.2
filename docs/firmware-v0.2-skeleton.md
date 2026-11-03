@@ -1,6 +1,100 @@
 # Firmware V0.2 skeleton
 
-## Current status: Stage 5 scheduled light control
+## Current status: Stage 6 sensor acquisition
+
+The user reports local control and basic automatic light behavior checked on
+hardware. Stage 6 itself still requires board validation.
+
+One `sensor_task` acquires HTU21, soil, LDR, and one HC-SR04 reading per cycle,
+then publishes a complete `APP_EVT_SENSOR_UPDATE`. It uses the existing 2000 ms
+period with `vTaskDelayUntil`, priority 4, and a 4096-byte stack. Only
+`control_task` accepts the snapshot into application state and updates
+`light.actual_percent`. Commanded brightness, the FSM, and AUTO are unaffected.
+
+### Drivers and ownership
+
+- `htu21_init(bus)` registers address 0x40 on the existing I2C bus;
+  `htu21_read(&temperature, &humidity)` checks every transaction and CRC.
+  No-hold commands retain the legacy sequence with 60 ms conversion waits and
+  bounded 100 ms transaction timeouts. Outputs change only after both reads pass.
+- `soil_init(adc)` and `ldr_init(adc)` configure separate channels on the same
+  ADC1 handle created once during startup. `soil_read(&raw, &percent)` and
+  `ldr_read(&raw, &percent)` retain raw samples and map 500..3800 to 0..100%,
+  clamping outside that range. Both mappings increase with raw voltage.
+- `ultrasonic_init()` owns TRIG/ECHO configuration;
+  `ultrasonic_read(&distance)` emits one 10 us pulse with 20 ms rise and 30 ms
+  fall timeouts. Already-high ECHO and distances outside (0, 400] cm are errors.
+  The task has lower priority than control/input and does not mask interrupts;
+  physical echo timing under load still needs board validation.
+
+Only `sensor_task` calls sensor read APIs. Legacy sensor functions remain as
+reference, but startup no longer registers a second HTU21 device and the legacy
+main loop no longer reads sensors or runs the 20-sample ultrasonic filter.
+
+OLED retains its device and renderer on the same I2C bus. The installed ESP-IDF
+master driver serializes bus transactions internally, so no additional I2C mutex
+is added. HTU21 conversion delays do not hold the bus; OLED can use its separate
+device while HTU21 converts. Bus/device initialization completes before readers
+start, and no second task accesses the HTU21 device.
+
+### Filtering, validity, and compatibility
+
+The sensor task owns a ring of the last five valid distances. It reports a
+median immediately, including during warm-up; even counts use the mean of the
+middle pair. Invalid samples do not alter history. Water distance 16 cm maps
+to 0%, 7 cm to 100%, with a linear inverse mapping and endpoint clamps.
+
+Snapshots retain the original temperature, humidity, raw ADC, percentage, and
+distance fields. Four `*_valid` flags mean a good reading has been obtained at
+least once. Four `*_error` fields hold each sensor's latest read result. Thus a
+valid field with an error is retained stale data, not a fresh sample. On initial
+failure, validity remains false; raw ADC is -1 and floating measurements are NaN
+in the sensor task. Percentage fields must be interpreted only with validity.
+No error-counter framework existed, so none is introduced. Logs report error
+changes and recovery rather than repeated identical failures every two seconds.
+
+`app_control_get_sensors()` copies the last accepted snapshot. A short ESP-IDF
+critical section protects that copy across cores; it contains no I/O or waits.
+Only control_task writes the published copy. Legacy OLED and HTTP telemetry
+use this read-only compatibility API rather than touching hardware. OLED shows
+N/A until the first good reading, then retains the last good display value.
+Soil display uses the mapped percent. The existing Blynk raw-soil payload and
+virtual pins are unchanged; its telemetry loop skips packets when a required
+sensor has no valid reading or its latest read failed. Display/network modules
+are not migrated. The future dedicated LIGHT_A Blynk pin remains unassigned.
+
+### Stage 6 validation and hardware checklist
+
+Host tests cover ADC calibration/monotonicity, water endpoints, partial median
+history, outliers, invalid samples, and ring wrap. Existing FSM tests also pass.
+These tests do not validate bus transactions, physical sensing, or scheduling.
+The Stage 6 `esp32s3` firmware build passed (RAM 11.6%, application partition
+91.0%). ELF inspection confirms the new sensor task/drivers are linked and
+legacy polling/filter functions are absent. No new compiler warnings appeared;
+the unused legacy `oled_fill` warning and the 16 MB / 2 MB Flash warning remain.
+The old volatile-pointer warnings disappeared with the legacy acquisition calls.
+
+Use the legacy OLED for temperature/humidity/soil/water, UART for errors, and a
+debugger snapshot (`app_control_get_sensors()` or `published_sensors`) for raw
+ADC, LDR, distance, validity, and last-error fields. No continuous sensor-value
+logging or new diagnostics task is enabled.
+
+- A: HTU21 temperature/humidity change plausibly without repeated I2C errors.
+  Check initial disconnect, transient failure, and recovery; good values must
+  remain unchanged on failed reads, with validity/error distinguishing the case.
+- B: Soil dry/low readings approach 0%, wet/high readings approach 100%; inspect
+  raw values and verify 500/3800 endpoints and clamping.
+- C: Cover LDR: raw and percentage decrease; illuminate it: both increase.
+  Verify PWM, target, and FSM do not react to LDR changes.
+- D: Check plausible water distance, stabilization over up to five valid cycles,
+  16 cm approximately 0% and 7 cm approximately 100%. Disconnect/stall ECHO:
+  history must not receive invalid values; before any success it stays invalid,
+  afterward the previous filtered result is retained with an error.
+- E: Verify two-second acquisitions, responsive buttons and unchanged Light FSM
+  during I2C errors and echo timeouts. Confirm the old roughly two-second
+  blocking ultrasonic averaging is absent and OLED still works on the shared bus.
+
+## Historical Stage 5 scheduled light control
 
 The user confirmed Stage 4 local control on hardware. Stage 5 adds a pure
 `app/light_fsm.c` FSM invoked only by `control_task`. Its context, application

@@ -12,3 +12,6 @@ esp_err_t app_control_start(void);
 
 // Task context only; reports invalid data, unavailable queue, or timeout.
 esp_err_t app_control_post_event(const app_event_t *event, TickType_t wait_ticks);
+
+// Copy the last accepted snapshot for legacy read-only consumers.
+esp_err_t app_control_get_sensors(sensor_snapshot_t *snapshot);

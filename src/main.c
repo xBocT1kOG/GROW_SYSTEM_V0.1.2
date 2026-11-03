@@ -36,6 +36,11 @@ static const char *TAG = "GROW_HW_TEST";
 #include "tasks/time_task.h"
 #include "tasks/ramp_task.h"
 #include "services/time_service.h"
+#include "drivers/htu21.h"
+#include "drivers/soil.h"
+#include "drivers/ldr.h"
+#include "drivers/ultrasonic.h"
+#include "tasks/sensor_task.h"
 
 // Хэндлы для управления шиной и конкретным устройством на ней
 i2c_master_bus_handle_t bus_handle;
@@ -71,14 +76,7 @@ void init_i2c_master(void) {
     };
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
 
-    // Добавление датчика GY-21 и OLED-дисплея на шину 
-    i2c_device_config_t gy21_config = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = HTU21_I2C_ADDRESS,
-        .scl_speed_hz = I2C_CLOCK_HZ, // Стандартная скорость 100 кГц
-    };
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &gy21_config, &gy21_handle));
-
+    // HTU21 device registration belongs to htu21_init(); OLED stays legacy.
     i2c_device_config_t oled_cfg = { 
         .dev_addr_length = I2C_ADDR_BIT_LEN_7, 
         .device_address = OLED_I2C_ADDRESS,
@@ -480,16 +478,35 @@ void display_task(void *pvParameters) {
 
     while (1) {
 
-        snprintf(buffer, sizeof(buffer), "TEMP: %dC ", (int)temp);
+        // Compatibility data source only; OLED rendering remains legacy.
+        sensor_snapshot_t sensors;
+        ESP_ERROR_CHECK(app_control_get_sensors(&sensors));
+        if (sensors.htu21_valid) {
+            snprintf(buffer, sizeof(buffer), "TEMP: %dC   ", (int)sensors.temperature_c);
+        } else {
+            snprintf(buffer, sizeof(buffer), "TEMP: N/A   ");
+        }
         oled_print(0, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "HUM: %d%% ", (int)hum);
+        if (sensors.htu21_valid) {
+            snprintf(buffer, sizeof(buffer), "HUM: %d%%   ", (int)sensors.humidity_percent);
+        } else {
+            snprintf(buffer, sizeof(buffer), "HUM: N/A   ");
+        }
         oled_print(2, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "CMS: %d%%  ", cms_raw);
+        if (sensors.soil_valid) {
+            snprintf(buffer, sizeof(buffer), "CMS: %d%%   ", sensors.soil_percent);
+        } else {
+            snprintf(buffer, sizeof(buffer), "CMS: N/A   ");
+        }
         oled_print(4, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "WATER: %d%%  ", water_percentage);
+        if (sensors.water_valid) {
+            snprintf(buffer, sizeof(buffer), "WATER: %d%%  ", sensors.water_percent);
+        } else {
+            snprintf(buffer, sizeof(buffer), "WATER: N/A  ");
+        }
         oled_print(6, 1, buffer);
 
         // Legacy actuator globals no longer reflect V0.2 commands.
@@ -631,7 +648,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(input_task_start());
 
     // Инициализация ультразвукового датчика
-    init_ultrasonic();
+    ESP_ERROR_CHECK(ultrasonic_init()); // Legacy ultrasonic startup disabled.
 
     ESP_LOGI(TAG, "=== Запуск тестирования оборудования ===");
 
@@ -657,51 +674,30 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
 
-    // Настраиваем 11dB (позволяет читать напряжения от 0 до ~3.1V)
-    adc_oneshot_chan_cfg_t config = {
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .atten = ADC_ATTEN_DB_12, 
-    };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, SOIL_ADC_CHANNEL, &config));
-    ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", SOIL_ADC_CHANNEL);
+    // Shared ADC1, one channel per driver; only sensor_task performs reads.
+    ESP_ERROR_CHECK(soil_init(adc1_handle));
+    ESP_ERROR_CHECK(ldr_init(adc1_handle));
+    ESP_ERROR_CHECK(htu21_init(bus_handle));
+    ESP_ERROR_CHECK(sensor_task_start());
 
     // Legacy PWM initialization disabled; light_pwm_init() ran once above.
 
-    // 3. Бесконечный цикл опроса
-    int tick_count = 0;
+    // Preserve legacy OLED rendering and HTTP telemetry as read-only consumers.
+    if (xTaskCreate(display_task, "oled_task", 4096, NULL, 5, NULL) != pdPASS) {
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
 
-    // Запускаем задачу экрана (выделяем 4096 байт памяти, средний приоритет)
-    xTaskCreate(display_task, "oled_task", 4096, NULL, 5, NULL);
-    
-    // Legacy auto_light task disabled; control_task owns commanded light.
-
+    // Legacy sensor polling/filtering and actuator writers remain disabled.
     while (1) {
-        // 1. Опрашиваем BLYNK и датчики
-        // Legacy Blynk actuator polling disabled during local-control migration.
-        read_gy21_data(&temp, &hum);
-        adc_oneshot_read(adc1_handle, SOIL_ADC_CHANNEL, &cms_raw);
-        int water_percentage = get_water_percentage(get_stable_water_level());
-
-        // Actuator writes belong exclusively to control_task via drivers.
-
-        // 3. Читаем ультразвуковой датчик
-        float water_distance = get_stable_water_level();
-
-        if (water_distance > 0) {
-        ESP_LOGI(TAG, "Расстояние до воды: %.2f см", water_distance);
-            int water_percentage = get_water_percentage(water_distance);
-            ESP_LOGI(TAG, "Уровень воды: %d%%", water_percentage);
-        } else {
-            ESP_LOGW(TAG, "Ошибка измерения расстояния до воды");
-        }   
-        
-        // 4. Отправляем телеметрию раз в 10 секунд
-        if (tick_count >= 2) { // 2 * 5 секунд = 10 секунд
-            send_to_blynk(temp, hum, cms_raw, water_percentage);
-            tick_count = 0; // Сбрасываем счетчик
+        sensor_snapshot_t sensors;
+        ESP_ERROR_CHECK(app_control_get_sensors(&sensors));
+        if (sensors.htu21_valid && sensors.soil_valid && sensors.water_valid &&
+            sensors.htu21_error == ESP_OK && sensors.soil_error == ESP_OK &&
+            sensors.water_error == ESP_OK) {
+            // Preserve the existing Blynk contract: soil telemetry is raw ADC.
+            send_to_blynk((int)sensors.temperature_c, (int)sensors.humidity_percent,
+                          sensors.soil_raw, sensors.water_percent);
         }
-
-        tick_count++;
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Базовая пауза цикла 5 секунды
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }

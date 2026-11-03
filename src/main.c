@@ -27,35 +27,8 @@ static const char *TAG = "GROW_HW_TEST";
 #define WIFI_PASS "******" // Ваш пароль Wi-Fi
 #define BLYNK_TOKEN "******"  // Ваш токен Blynk
 
-// --- НАСТРОЙКИ ПИНОВ ---
-#define I2C_MASTER_SDA_IO       11      // GP11
-#define I2C_MASTER_SCL_IO       12      // GP12
-#define I2C_MASTER_NUM          I2C_NUM_0
-#define GY21_ADDR               0x40    // Адрес датчика GY-21 (HTU21D)
-#define ADC_CHAN_1                ADC_CHANNEL_3 // GP4 соответствует ADC1_CH3 для емкостного датчика
-#define ADC_CHAN_2                ADC_CHANNEL_5 // GP6 соответствует ADC1_CH5 для LDR
-#define PUMP_BUTTON_PIN              18 // GP18 - пин для кнопки насоса
-#define AUTOLIGHT_BUTTON_PIN          35 // GP35 - пин для кнопки автоматического освещения
-#define LIGHT_PLUS_BUTTON_PIN            36 // GP36 - пин для кнопки увеличения освещения
-#define LIGHT_MINUS_BUTTON_PIN           37 // GP37 - пин для кнопки уменьшения
-// Наш цифровой пин для насоса
-#define PUMP_PIN 13 
-
-// Пины для ультразвукового датчика (HC-SR04)
-#define TRIG_PIN 14
-#define ECHO_PIN 2
-
-// Константы для калибровки уровня воды (в сантиметрах)
-#define DISTANCE_EMPTY_CM 16.0f
-#define DISTANCE_FULL_CM 7.0f
-
-// --- НАСТРОЙКИ ШИМ ---
-#define PWM_TIMER              LEDC_TIMER_0
-#define PWM_MODE               LEDC_LOW_SPEED_MODE
-#define PWM_OUTPUT_IO          (17)                // Замени на тот GPIO, куда подключишь конвертер
-#define PWM_CHANNEL            LEDC_CHANNEL_0
-#define PWM_DUTY_RES           LEDC_TIMER_8_BIT   // Разрешение 8 бит (диапазон 0 - 255)
-#define PWM_FREQUENCY          (1000)             // 1 кГц обычно идеально для таких конвертеров
+#include "config/board_config.h"
+#include "config/app_config.h"
 
 // Хэндлы для управления шиной и конкретным устройством на ней
 i2c_master_bus_handle_t bus_handle;
@@ -83,7 +56,7 @@ void init_i2c_master(void) {
     // Настройка физической шины
     i2c_master_bus_config_t i2c_mst_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = I2C_NUM_0,
+        .i2c_port = I2C_MASTER_NUM,
         .scl_io_num = I2C_MASTER_SCL_IO,
         .sda_io_num = I2C_MASTER_SDA_IO,
         .glitch_ignore_cnt = 7,
@@ -94,15 +67,15 @@ void init_i2c_master(void) {
     // Добавление датчика GY-21 и OLED-дисплея на шину 
     i2c_device_config_t gy21_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = GY21_ADDR,
-        .scl_speed_hz = 100000, // Стандартная скорость 100 кГц
+        .device_address = HTU21_I2C_ADDRESS,
+        .scl_speed_hz = I2C_CLOCK_HZ, // Стандартная скорость 100 кГц
     };
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &gy21_config, &gy21_handle));
 
     i2c_device_config_t oled_cfg = { 
         .dev_addr_length = I2C_ADDR_BIT_LEN_7, 
-        .device_address = 0x3C, 
-        .scl_speed_hz = 100000 
+        .device_address = OLED_I2C_ADDRESS,
+        .scl_speed_hz = I2C_CLOCK_HZ
     };
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &oled_cfg, &oled_handle));
 }
@@ -302,13 +275,13 @@ void send_to_blynk_pump_state(int pump_state) {
 // ---------------------------------------------------------
 void init_ultrasonic(void) {
     // Настраиваем TRIG как выход
-    gpio_reset_pin(TRIG_PIN);
-    gpio_set_direction(TRIG_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(TRIG_PIN, 0); // По умолчанию выключен
+    gpio_reset_pin(ULTRASONIC_TRIG_PIN);
+    gpio_set_direction(ULTRASONIC_TRIG_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(ULTRASONIC_TRIG_PIN, 0); // По умолчанию выключен
 
     // Настраиваем ECHO как вход
-    gpio_reset_pin(ECHO_PIN);
-    gpio_set_direction(ECHO_PIN, GPIO_MODE_INPUT);
+    gpio_reset_pin(ULTRASONIC_ECHO_PIN);
+    gpio_set_direction(ULTRASONIC_ECHO_PIN, GPIO_MODE_INPUT);
 }
 
 // ---------------------------------------------------------
@@ -316,13 +289,13 @@ void init_ultrasonic(void) {
 // ---------------------------------------------------------
 float get_water_distance_cm(void) {
     // 1. Посылаем стартовый импульс длиной 10 микросекунд
-    gpio_set_level(TRIG_PIN, 1);
+    gpio_set_level(ULTRASONIC_TRIG_PIN, 1);
     ets_delay_us(10);
-    gpio_set_level(TRIG_PIN, 0);
+    gpio_set_level(ULTRASONIC_TRIG_PIN, 0);
 
     // 2. Ждем, пока датчик поднимет ECHO в HIGH (начало ответа)
     int64_t start_wait = esp_timer_get_time();
-    while (gpio_get_level(ECHO_PIN) == 0) {
+    while (gpio_get_level(ULTRASONIC_ECHO_PIN) == 0) {
         // Таймаут, чтобы код не завис, если датчик отключится
         if (esp_timer_get_time() - start_wait > 20000) {
             ESP_LOGE(TAG, "Таймаут датчика уровня: нет ответа");
@@ -332,7 +305,7 @@ float get_water_distance_cm(void) {
     int64_t echo_start = esp_timer_get_time(); // Фиксируем время старта
 
     // 3. Ждем, пока датчик опустит ECHO в LOW (конец ответа)
-    while (gpio_get_level(ECHO_PIN) == 1) {
+    while (gpio_get_level(ULTRASONIC_ECHO_PIN) == 1) {
         if (esp_timer_get_time() - echo_start > 30000) { // Примерно 5 метров
             ESP_LOGE(TAG, "Таймаут датчика уровня: сигнал потерян");
             return -1.0;
@@ -383,16 +356,16 @@ float get_stable_water_level(void) {
 // Функция маппинга
 int get_water_percentage(float current_distance) {
     // 1. Ограничиваем (clamp) значения, чтобы не вылезти за 0-100%
-    if (current_distance > DISTANCE_EMPTY_CM) {
-        current_distance = DISTANCE_EMPTY_CM;
+    if (current_distance > WATER_DISTANCE_EMPTY_CM) {
+        current_distance = WATER_DISTANCE_EMPTY_CM;
     }
-    if (current_distance < DISTANCE_FULL_CM) {
-        current_distance = DISTANCE_FULL_CM;
+    if (current_distance < WATER_DISTANCE_FULL_CM) {
+        current_distance = WATER_DISTANCE_FULL_CM;
     }
 
     // 2. Сама математика (инвертированная, так как чем меньше см, тем больше воды)
     // (16 - текущая_дистанция) / (16 - 6) * 100
-    float percentage = ((DISTANCE_EMPTY_CM - current_distance) / (DISTANCE_EMPTY_CM - DISTANCE_FULL_CM)) * 100.0f;
+    float percentage = ((WATER_DISTANCE_EMPTY_CM - current_distance) / (WATER_DISTANCE_EMPTY_CM - WATER_DISTANCE_FULL_CM)) * 100.0f;
 
     // 3. Округляем до математически правильного целого числа и возвращаем
     return (int)(percentage + 0.5f);
@@ -402,27 +375,27 @@ int get_water_percentage(float current_distance) {
 void init_pwm_converter(void) {
     // Настройка таймера
     ledc_timer_config_t ledc_timer = {
-        .speed_mode       = PWM_MODE,
-        .timer_num        = PWM_TIMER,
-        .duty_resolution  = PWM_DUTY_RES,
-        .freq_hz          = PWM_FREQUENCY, 
+        .speed_mode       = LIGHT_PWM_MODE,
+        .timer_num        = LIGHT_PWM_TIMER,
+        .duty_resolution  = LIGHT_PWM_RESOLUTION,
+        .freq_hz          = LIGHT_PWM_FREQUENCY_HZ,
         .clk_cfg          = LEDC_AUTO_CLK
     };
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
     // Настройка канала и привязка к пину
     ledc_channel_config_t ledc_channel = {
-        .speed_mode     = PWM_MODE,
-        .channel        = PWM_CHANNEL,
-        .timer_sel      = PWM_TIMER,
+        .speed_mode     = LIGHT_PWM_MODE,
+        .channel        = LIGHT_PWM_CHANNEL,
+        .timer_sel      = LIGHT_PWM_TIMER,
         .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = PWM_OUTPUT_IO,
+        .gpio_num       = LIGHT_PWM_GPIO,
         .duty           = 0, // При старте выдаем 0 (0 Вольт на выходе)
         .hpoint         = 0
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
     
-    ESP_LOGI("PWM", "ШИМ конвертер инициализирован на пине %d", PWM_OUTPUT_IO);
+    ESP_LOGI("PWM", "ШИМ конвертер инициализирован на пине %d", LIGHT_PWM_GPIO);
 }
 
 // 2. Функция маппинга (вызывать при получении данных от ползунка Blynk)
@@ -436,8 +409,8 @@ void set_converter_level(int slider_value) {
     uint32_t duty = (uint32_t)(slider_value * 25.5f);
 
     // Применяем новые настройки к железу
-    ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, PWM_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(PWM_MODE, PWM_CHANNEL));
+    ESP_ERROR_CHECK(ledc_set_duty(LIGHT_PWM_MODE, LIGHT_PWM_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LIGHT_PWM_MODE, LIGHT_PWM_CHANNEL));
     
     ESP_LOGI("PWM", "Уровень: %d/10 -> Скважность: %lu/255", slider_value, (unsigned long)duty);
 }
@@ -672,7 +645,7 @@ void app_main(void) {
     // 2. Инициализация ADC1 (Емкостной датчик)
     adc_oneshot_unit_handle_t adc1_handle;
     adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_1,
+        .unit_id = SENSOR_ADC_UNIT,
     };
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
 
@@ -681,8 +654,8 @@ void app_main(void) {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
         .atten = ADC_ATTEN_DB_12, 
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHAN_1, &config));
-    ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", ADC_CHAN_1);
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, SOIL_ADC_CHANNEL, &config));
+    ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", SOIL_ADC_CHANNEL);
 
     init_pwm_converter(); // Инициализация ШИМ для конвертера
 
@@ -700,7 +673,7 @@ void app_main(void) {
         pump_state = read_blynk_pump_button();
         int button_slider = read_blynk_slider();
         read_gy21_data(&temp, &hum);
-        adc_oneshot_read(adc1_handle, ADC_CHAN_1, &cms_raw);
+        adc_oneshot_read(adc1_handle, SOIL_ADC_CHANNEL, &cms_raw);
         int water_percentage = get_water_percentage(get_stable_water_level());
 
         // 2. Включаем или выключаем физические пины

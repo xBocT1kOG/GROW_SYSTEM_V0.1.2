@@ -32,8 +32,8 @@ static const char *TAG = "GROW_HW_TEST";
 #define I2C_MASTER_SCL_IO       12      // GP12
 #define I2C_MASTER_NUM          I2C_NUM_0
 #define GY21_ADDR               0x40    // Адрес датчика GY-21 (HTU21D)
-#define ADC_CHAN_1                ADC_CHANNEL_3 // GP4 соответствует ADC1_CH3
-#define ADC_CHAN_2                ADC_CHANNEL_5 // GP6 соответствует ADC1_CH5
+#define ADC_CHAN_1                ADC_CHANNEL_3 // GP4 соответствует ADC1_CH3 для емкостного датчика
+#define ADC_CHAN_2                ADC_CHANNEL_5 // GP6 соответствует ADC1_CH5 для LDR
 #define PUMP_BUTTON_PIN              18 // GP18 - пин для кнопки насоса
 #define AUTOLIGHT_BUTTON_PIN          35 // GP35 - пин для кнопки автоматического освещения
 #define LIGHT_PLUS_BUTTON_PIN            36 // GP36 - пин для кнопки увеличения освещения

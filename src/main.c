@@ -32,9 +32,12 @@ static const char *TAG = "GROW_HW_TEST";
 #define I2C_MASTER_SCL_IO       12      // GP12
 #define I2C_MASTER_NUM          I2C_NUM_0
 #define GY21_ADDR               0x40    // Адрес датчика GY-21 (HTU21D)
-#define ADC_CHAN                ADC_CHANNEL_3 // GP4 соответствует ADC1_CH3
-#define PUMP_BUTTON_PIN              18 // GP18 - пин для кнопки
-
+#define ADC_CHAN_1                ADC_CHANNEL_3 // GP4 соответствует ADC1_CH3
+#define ADC_CHAN_2                ADC_CHANNEL_5 // GP6 соответствует ADC1_CH5
+#define PUMP_BUTTON_PIN              18 // GP18 - пин для кнопки насоса
+#define AUTOLIGHT_BUTTON_PIN          35 // GP35 - пин для кнопки автоматического освещения
+#define LIGHT_PLUS_BUTTON_PIN            36 // GP36 - пин для кнопки увеличения освещения
+#define LIGHT_MINUS_BUTTON_PIN           37 // GP37 - пин для кнопки уменьшения
 // Наш цифровой пин для насоса
 #define PUMP_PIN 13 
 
@@ -678,8 +681,8 @@ void app_main(void) {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
         .atten = ADC_ATTEN_DB_12, 
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHAN, &config));
-    ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", ADC_CHAN);
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHAN_1, &config));
+    ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", ADC_CHAN_1);
 
     init_pwm_converter(); // Инициализация ШИМ для конвертера
 
@@ -697,7 +700,7 @@ void app_main(void) {
         pump_state = read_blynk_pump_button();
         int button_slider = read_blynk_slider();
         read_gy21_data(&temp, &hum);
-        adc_oneshot_read(adc1_handle, ADC_CHAN, &cms_raw);
+        adc_oneshot_read(adc1_handle, ADC_CHAN_1, &cms_raw);
         int water_percentage = get_water_percentage(get_stable_water_level());
 
         // 2. Включаем или выключаем физические пины

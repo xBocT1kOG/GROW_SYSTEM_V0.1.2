@@ -33,6 +33,9 @@ static const char *TAG = "GROW_HW_TEST";
 #include "drivers/pump.h"
 #include "drivers/light_pwm.h"
 #include "tasks/input_task.h"
+#include "tasks/time_task.h"
+#include "tasks/ramp_task.h"
+#include "services/time_service.h"
 
 // Хэндлы для управления шиной и конкретным устройством на ней
 i2c_master_bus_handle_t bus_handle;
@@ -149,11 +152,12 @@ void wifi_init(void) {
     // --- Инициализация службы времени (NTP) ---
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_init();
 
     // Установка локального часового пояса с автоматическим переходом на летнее/зимнее время
     setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
     tzset();
+    time_service_init(); // Register sync validity after configuring local time.
+    esp_sntp_init();
 }
 
 // ---------------------------------------------------------
@@ -635,6 +639,8 @@ void app_main(void) {
     ESP_ERROR_CHECK(nvs_flash_init());
     nvs_flash_init();
     wifi_init();
+    ESP_ERROR_CHECK(time_task_start());
+    ESP_ERROR_CHECK(ramp_task_start());
     // Legacy button startup disabled; input_task owns all four buttons.
 
     // Ждем 5 секунд, чтобы Wi-Fi успел подключиться

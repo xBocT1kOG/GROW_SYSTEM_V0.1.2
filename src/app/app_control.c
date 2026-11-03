@@ -1,4 +1,5 @@
 #include "app_control.h"
+#include "light_fsm.h"
 #include "../config/app_config.h"
 #include "../drivers/pump.h"
 #include "../drivers/light_pwm.h"
@@ -50,6 +51,24 @@ static void change_light(app_state_t *state, bool increase)
         return;
     }
     ESP_LOGI(TAG, "Light: %u%%", (unsigned)state->light.system_level_percent);
+    light_fsm_after_manual(&state->light);
+}
+
+static void ramp_light(app_state_t *state)
+{
+    const light_state_t previous = state->light;
+    light_fsm_ramp(&state->light);
+    if (state->light.system_level_percent == previous.system_level_percent) {
+        return;
+    }
+    const esp_err_t err = light_pwm_set_percent(state->light.system_level_percent);
+    if (err != ESP_OK) {
+        state->light = previous; // Retry the same step at the next ramp tick.
+        state->last_error = err;
+        ESP_LOGE(TAG, "Ramp failed: %s", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "Ramp: %u%%", (unsigned)state->light.system_level_percent);
 }
 
 // ---------------------------------------------------------
@@ -57,8 +76,10 @@ static void change_light(app_state_t *state, bool increase)
 // ---------------------------------------------------------
 
 // Only control_task calls this handler with its private state.
-static void handle_event(app_state_t *state, const app_event_t *event)
+static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
+                         const app_event_t *event)
 {
+    const light_mod_t previous_mode = state->light.mod;
     switch (event->type) {
     case APP_EVT_SENSOR_UPDATE:
         state->sensors = event->data.sensors;
@@ -85,20 +106,35 @@ static void handle_event(app_state_t *state, const app_event_t *event)
     case APP_EVT_LIGHT_DECREMENT:
         change_light(state, false);
         break;
-    case APP_EVT_LIGHT_AUTO_TOGGLE:
-        state->light.auto_enabled = !state->light.auto_enabled;
-        state->light.mod = LIGHT_MOD_IDLE; // Scheduling is not active yet.
+    case APP_EVT_LIGHT_AUTO_TOGGLE: {
+        const time_snapshot_t now = time_service_now();
+        light_fsm_set_auto(&state->light, fsm, !state->light.auto_enabled, &now);
         ESP_LOGI(TAG, "Auto: %s", state->light.auto_enabled ? "ON" : "OFF");
+        break;
+    }
+    case APP_EVT_TIME_CHECK:
+        if (state->time_synced != event->data.time.synced) {
+            ESP_LOGI(TAG, "%s", event->data.time.synced
+                     ? "Time synced: schedule ready" : "Time not synced: schedule skipped");
+        }
+        state->time_synced = event->data.time.synced;
+        light_fsm_check_schedule(&state->light, fsm, &event->data.time);
+        break;
+    case APP_EVT_LIGHT_RAMP_TICK:
+        ramp_light(state);
         break;
     case APP_EVT_BLYNK_PUMP_SET:
     case APP_EVT_BLYNK_LIGHT_SET:
     case APP_EVT_BLYNK_AUTO_SET:
-    case APP_EVT_TIME_CHECK:
-    case APP_EVT_LIGHT_RAMP_TICK:
-        // Network commands and scheduled automation remain inactive.
+        // Network control remains inactive.
         break;
     default:
         break;
+    }
+    if (state->light.mod != previous_mode) {
+        const char *mode = state->light.mod == LIGHT_MOD_DAWN ? "DAWN" :
+                           state->light.mod == LIGHT_MOD_DUSK ? "DUSK" : "IDLE";
+        ESP_LOGI(TAG, "Light mode: %s", mode);
     }
 }
 
@@ -116,11 +152,13 @@ static void control_task(void *argument)
         .pump_enabled = false,
     };
     app_event_t event;
+    light_fsm_context_t fsm = {0};
     ESP_LOGI(TAG, "Local control ready: Pump OFF, Light 0%%, Auto OFF");
+    ESP_LOGI(TAG, "Time not synced: schedule skipped until SNTP sync");
 
     for (;;) {
         if (xQueueReceive(event_queue, &event, portMAX_DELAY) == pdTRUE) {
-            handle_event(&state, &event);
+            handle_event(&state, &fsm, &event);
         }
     }
 }

@@ -1,6 +1,9 @@
 #pragma once
 
+#include "esp_err.h"
+
 // ---------------------------------------------------------
-// FUTURE MODULE
+// PERIODIC PRODUCER STARTUP
 // ---------------------------------------------------------
-// Time task placeholder; emit APP_EVT_TIME_CHECK every 60 seconds.
+// Call once after app_control_start(), from serialized startup.
+esp_err_t time_task_start(void);

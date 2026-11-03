@@ -1,6 +1,9 @@
 #pragma once
 
+#include "esp_err.h"
+
 // ---------------------------------------------------------
-// FUTURE MODULE
+// PERIODIC PRODUCER STARTUP
 // ---------------------------------------------------------
-// Ramp task placeholder; emit APP_EVT_LIGHT_RAMP_TICK every 10 minutes.
+// Call once after app_control_start(), from serialized startup.
+esp_err_t ramp_task_start(void);

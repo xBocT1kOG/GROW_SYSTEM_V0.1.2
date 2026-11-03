@@ -42,3 +42,7 @@
 #define BUTTON_SAMPLE_PERIOD_MS         10 // Sample while a button is active
 #define INPUT_TASK_STACK_BYTES        3072
 #define INPUT_TASK_PRIORITY              5
+
+// Time and ramp tasks only publish events.
+#define PERIODIC_TASK_STACK_BYTES     3072
+#define PERIODIC_TASK_PRIORITY           4

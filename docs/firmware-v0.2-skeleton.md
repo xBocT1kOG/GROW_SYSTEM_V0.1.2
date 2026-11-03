@@ -1,6 +1,75 @@
 # Firmware V0.2 skeleton
 
-## Current status: Stage 4 local control
+## Current status: Stage 5 scheduled light control
+
+The user confirmed Stage 4 local control on hardware. Stage 5 adds a pure
+`app/light_fsm.c` FSM invoked only by `control_task`. Its context, application
+state, and actuator decisions all belong to that task. LDR remains telemetry only.
+
+After legacy Wi-Fi/time initialization, startup creates `time_task` and
+`ramp_task`. Both use `vTaskDelayUntil`: time snapshots every 60 seconds and
+ramp events every 600 seconds. No immediate ramp occurs at task startup or at
+a schedule transition. The first ramp step uses the next global ramp tick,
+so it can occur less than ten minutes after the scheduled transition.
+Queue-full events are dropped with a warning rather than blocking producers.
+
+`time_service` registers an SNTP callback before SNTP starts. An atomic service
+flag records the first successful synchronization; snapshots use `localtime_r`
+and the unchanged system timezone. Wi-Fi loss alone does not invalidate an
+already synchronized running clock. Before synchronization, schedule checks
+cannot start cycles, but local controls remain usable. No clock freshness
+timeout or persistence is introduced.
+
+At local 06:00, AUTO can start DAWN only below its target (default 60%). At
+20:00 it can start DUSK only above zero. A schedule check changes MOD only.
+Ramp ticks change brightness by 5%, ending at the target or zero respectively.
+The current minute must match exactly: missed schedule minutes are not caught up.
+
+Deduplication stores a date high-water mark separately for DAWN and DUSK,
+including scheduled checks while AUTO is OFF. Repeated or backward-date checks
+cannot replay a consumed cycle. These marks reset on reboot. AUTO ON records
+its synchronized enable time and excludes the current/past scheduled minute;
+it never changes brightness or starts a cycle itself. AUTO OFF immediately
+sets IDLE while preserving brightness. Enabling before time sync arms future
+valid checks without inventing a wall-clock timestamp.
+
+Manual +/- remains available during ramps. It preserves MOD unless DAWN reaches
+or exceeds its target, or DUSK reaches zero; these endpoints enter IDLE
+immediately after a successful manual output command. DAWN never reduces an
+above-target manual level. Failed ramp writes restore the previous light state
+and record/log the driver error; the next periodic tick can retry.
+
+Future Blynk work must add a dedicated virtual pin for LIGHT_A / LDR actual
+light percentage. No pin is assigned here and the dashboard/API is unchanged.
+
+Stage 5 firmware build and host FSM tests passed; new modules have no compiler
+warnings. Legacy volatile-pointer/unused-OLED warnings and the 16 MB / 2 MB
+Flash configuration warning remain. Stage 5 has not been tested on hardware.
+
+### Stage 5 hardware checklist
+
+Use UART logs; OLED actuator state integration remains deferred. There is no
+production time-forcing hook, so use synchronized local schedule times and the
+unchanged ten-minute ramp period. Host tests cover accelerated synthetic times.
+
+- A: AUTO OFF at 06:00/20:00: no automatic transition or brightness change.
+- B: AUTO ON before 06:00, light 20%: DAWN without an immediate step, then
+  25, 30, 35, 40, 45, 50, 55, 60% on ticks and IDLE at 60%.
+- C: AUTO ON before 20:00, light 50%: DUSK without an immediate step, then
+  decrease by 5% on ticks to 0%, followed by IDLE.
+- D: During DUSK press +: immediate +5%, still DUSK; next tick subtracts 5%.
+- E: During DAWN press -: immediate -5%, still DAWN; next tick adds 5%.
+- F: Turn AUTO OFF during either cycle: IDLE immediately, brightness unchanged
+  through subsequent ramp ticks.
+- Also check AUTO ON at 21:00 and within an already-started schedule minute:
+  no catch-up. At 06:00 with brightness 80%, DAWN must not lower it to 60%.
+- During DAWN raise brightness to/above target: immediate IDLE without reduction.
+- Boot without SNTP access: manual pump/light/AUTO controls still work, and
+  scheduled cycles remain blocked until synchronization.
+- Regression: held buttons do not repeat; bounds remain 0..100%; legacy Blynk
+  commands cannot override local control; sensor telemetry still operates.
+
+## Historical Stage 4 local control
 
 The sections below this status describe the original Stage 1 boundary.
 Stage 4 now starts `pump_init()`, `light_pwm_init()`, `app_control_start()`,

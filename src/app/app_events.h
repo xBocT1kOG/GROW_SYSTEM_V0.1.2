@@ -2,6 +2,7 @@
 
 #include <time.h>
 #include "app_state.h"
+#include "../services/time_service.h"
 
 // ---------------------------------------------------------
 // CONTROL QUEUE MESSAGES
@@ -30,7 +31,7 @@ typedef struct {
         bool enabled;              // Blynk pump/auto set
         uint8_t light_percent;     // Blynk light set: 0..100
         sensor_snapshot_t sensors; // Copied by value; no producer-owned pointers
-        time_t timestamp;          // Time check: epoch seconds, after sync
+        time_snapshot_t time;      // Validity and local time copied by value
         esp_err_t error;           // System error
     } data;
 } app_event_t;

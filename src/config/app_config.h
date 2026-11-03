@@ -34,3 +34,11 @@
 #define APP_EVENT_QUEUE_LENGTH          16
 #define CONTROL_TASK_STACK_BYTES      4096 // ESP-IDF stack size is in bytes
 #define CONTROL_TASK_PRIORITY            5
+
+// ---------------------------------------------------------
+// BUTTON INPUT TIMING AND RESOURCES
+// ---------------------------------------------------------
+#define BUTTON_DEBOUNCE_MS              40 // Stable press and release interval
+#define BUTTON_SAMPLE_PERIOD_MS         10 // Sample while a button is active
+#define INPUT_TASK_STACK_BYTES        3072
+#define INPUT_TASK_PRIORITY              5

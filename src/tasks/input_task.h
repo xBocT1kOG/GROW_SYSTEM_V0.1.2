@@ -1,6 +1,11 @@
 #pragma once
 
+#include "esp_err.h"
+
 // ---------------------------------------------------------
-// FUTURE MODULE
+// INPUT TASK STARTUP
 // ---------------------------------------------------------
-// Input task placeholder; emit button events without actuator writes.
+// Call once from startup after app_control_start(), without concurrent callers.
+// Legacy button handling must be disabled before this takes GPIO ownership.
+// Queue-full events are dropped with a warning; held buttons never auto-repeat.
+esp_err_t input_task_start(void);

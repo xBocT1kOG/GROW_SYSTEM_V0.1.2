@@ -29,6 +29,10 @@ static const char *TAG = "GROW_HW_TEST";
 
 #include "config/board_config.h"
 #include "config/app_config.h"
+#include "app/app_control.h"
+#include "drivers/pump.h"
+#include "drivers/light_pwm.h"
+#include "tasks/input_task.h"
 
 // Хэндлы для управления шиной и конкретным устройством на ней
 i2c_master_bus_handle_t bus_handle;
@@ -484,14 +488,9 @@ void display_task(void *pvParameters) {
         snprintf(buffer, sizeof(buffer), "WATER: %d%%  ", water_percentage);
         oled_print(6, 1, buffer);
 
-        snprintf(buffer, sizeof(buffer), "LIGHT: %d0%% ", current_light_level);
-        oled_print(0, 63, buffer);
-
-        snprintf(buffer, sizeof(buffer), "MODE: %s ", current_mode);
-        oled_print(2, 63, buffer);
-
-        snprintf(buffer, sizeof(buffer), "PUMP: %s ", pump_state ? "ON" : "OFF");
-        oled_print(4, 63, buffer);
+        // Legacy actuator globals no longer reflect V0.2 commands.
+        oled_print(0, 63, "LOCAL CTRL");
+        oled_print(2, 63, "SEE UART");
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -619,10 +618,13 @@ void pump_button_init(void) {
 // ---------------------------------------------------------
 void app_main(void) {
 
-    // Инициализация пина насоса
-    gpio_reset_pin(PUMP_PIN);
-    gpio_set_direction(PUMP_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(PUMP_PIN, 0); // 0 - выключено, 1 - включено
+    // ---------------------------------------------------------
+    // V0.2 LOCAL CONTROL STARTUP
+    // ---------------------------------------------------------
+    ESP_ERROR_CHECK(pump_init());
+    ESP_ERROR_CHECK(light_pwm_init());
+    ESP_ERROR_CHECK(app_control_start());
+    ESP_ERROR_CHECK(input_task_start());
 
     // Инициализация ультразвукового датчика
     init_ultrasonic();
@@ -633,7 +635,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(nvs_flash_init());
     nvs_flash_init();
     wifi_init();
-    pump_button_init(); // Инициализация кнопки с прерыванием
+    // Legacy button startup disabled; input_task owns all four buttons.
 
     // Ждем 5 секунд, чтобы Wi-Fi успел подключиться
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -657,7 +659,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, SOIL_ADC_CHANNEL, &config));
     ESP_LOGI(TAG, "АЦП инициализирован на канале %d (GP4)", SOIL_ADC_CHANNEL);
 
-    init_pwm_converter(); // Инициализация ШИМ для конвертера
+    // Legacy PWM initialization disabled; light_pwm_init() ran once above.
 
     // 3. Бесконечный цикл опроса
     int tick_count = 0;
@@ -665,20 +667,16 @@ void app_main(void) {
     // Запускаем задачу экрана (выделяем 4096 байт памяти, средний приоритет)
     xTaskCreate(display_task, "oled_task", 4096, NULL, 5, NULL);
     
-    // Запускаем задачу автоматического управления освещением (выделяем 4096 байт памяти, средний приоритет)
-    xTaskCreate(auto_light, "auto_light_task", 4096, NULL, 5, NULL);
+    // Legacy auto_light task disabled; control_task owns commanded light.
 
     while (1) {
         // 1. Опрашиваем BLYNK и датчики
-        pump_state = read_blynk_pump_button();
-        int button_slider = read_blynk_slider();
+        // Legacy Blynk actuator polling disabled during local-control migration.
         read_gy21_data(&temp, &hum);
         adc_oneshot_read(adc1_handle, SOIL_ADC_CHANNEL, &cms_raw);
         int water_percentage = get_water_percentage(get_stable_water_level());
 
-        // 2. Включаем или выключаем физические пины
-        gpio_set_level(PUMP_PIN, pump_state);
-        set_converter_level(button_slider);
+        // Actuator writes belong exclusively to control_task via drivers.
 
         // 3. Читаем ультразвуковой датчик
         float water_distance = get_stable_water_level();

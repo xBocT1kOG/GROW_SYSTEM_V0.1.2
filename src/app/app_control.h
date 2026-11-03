@@ -7,6 +7,7 @@
 // CONTROL TASK API
 // ---------------------------------------------------------
 // Call once from startup before starting event producers; not concurrently.
+// Requires successful pump_init() and light_pwm_init(), both initially OFF.
 esp_err_t app_control_start(void);
 
 // Task context only; reports invalid data, unavailable queue, or timeout.

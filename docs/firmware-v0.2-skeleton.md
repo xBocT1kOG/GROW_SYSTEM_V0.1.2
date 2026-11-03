@@ -1,5 +1,31 @@
 # Firmware V0.2 skeleton
 
+## Current status: Stage 4 local control
+
+The sections below this status describe the original Stage 1 boundary.
+Stage 4 now starts `pump_init()`, `light_pwm_init()`, `app_control_start()`,
+and `input_task_start()` in that order, before legacy networking and sensors.
+Initialization failures use ESP-IDF error checks and stop startup.
+
+Only `control_task` commands the actuators after safe driver initialization.
+Pump presses toggle ON/OFF. Light presses adjust by 5%, clamped to 0..100%.
+AUTO toggles its flag without changing brightness; MOD remains IDLE.
+Driver failures are logged, recorded in `last_error`, and roll back the
+commanded application value to its previous successful command.
+
+Legacy button startup, auto-light task startup, PWM initialization, and Blynk
+actuator polling/writes are disabled. Their functions remain as reference.
+Legacy sensors and telemetry still run. OLED sensor rows remain; actuator rows
+refer to UART because display snapshot integration is deferred. No FSM,
+schedule, ramp, or V0.2 network path is active.
+
+Validation covers compilation and static ownership review, not physical hardware.
+After flashing, verify OFF/0% startup, one pump toggle per press, no repeats
+while held, light steps of 5% with both endpoints clamped, and AUTO toggling
+without changing brightness. Test release/repress and simultaneous buttons,
+and confirm Blynk commands cannot override local control. Use UART for state
+and error logs. The existing Flash configuration warning remains deferred.
+
 ## Stage boundary
 
 The default entry point still runs the proven legacy implementation in `src/main.c`.

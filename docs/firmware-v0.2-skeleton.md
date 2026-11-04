@@ -1,6 +1,91 @@
 # Firmware V0.2 skeleton
 
-## Current status: Stage 7 OLED application snapshots
+## Current status: Stage 8 Wi-Fi and Blynk networking
+
+`network_service` owns station Wi-Fi, SNTP and bounded HTTPS requests;
+`network_task` publishes connection/time events, polls controls and uploads full
+application snapshots. Only control_task applies remote commands to drivers.
+The old Wi-Fi startup and main-loop Blynk path are inactive; legacy functions
+remain as reference. Local controls, sensors, display and FSM run independently.
+
+Wi-Fi connects/reconnects on a five-second retry interval. SNTP uses pool.ntp.org
+and the existing EET/EEST timezone rule. Time is reported synchronized only after
+the time service confirms valid synchronized time. Initialization failures log
+and leave local operation running; they require reboot to retry initialization.
+Connection/request failures retry normally without reboot or busy loops.
+
+| Pin | Value | Direction |
+| --- | --- | --- |
+| V0 | TEMP, Celsius | Telemetry |
+| V1 | HUM, percent | Telemetry |
+| V2 | SOIL, percent | Telemetry |
+| V3 | PUMP, 0/1 | Control and state |
+| V4 | WATER, percent | Telemetry |
+| V5 | LIGHT_S, 0..100 percent | Control and state |
+| V6 | LIGHT_A/LDR, 0..100 percent | Telemetry |
+| V7 | AUTO, 0/1 | Control and state |
+| V8 | MOD, 0 IDLE / 1 DAWN / 2 DUSK | Telemetry only |
+
+Independent `BLYNK_CONTROL_POLL_MS` and `BLYNK_TELEMETRY_PERIOD_MS` timers each
+default to 5000 ms. GET `/external/api/get` reads only V3/V5/V7; GET
+`/external/api/batch/update` sends a coherent snapshot without sensor reads.
+Unavailable or currently failed sensor channels are omitted, leaving their last
+cloud value until acquisition recovers. V6 now has its assigned LDR mapping.
+See the official [multi-value read](https://docs.blynk.io/en/blynk.cloud/device-https-api/get-multiple-datastream-values)
+and [batch update](https://docs.blynk.io/en/blynk.cloud/device-https-api/update-multiple-datastreams-api) contracts.
+
+The parser accepts integer numbers/strings/single-element arrays, rejects
+malformed or missing controls, validates booleans and clamps V5 to 0..100.
+Last-observed values suppress repeated commands; successful state uploads update
+that baseline so device echoes do not become commands. At first connection,
+remote controls differing from startup state are applied. On reconnect, retained
+baselines preserve offline local changes unless a remote value also changed.
+Failed polling or queue submission defers uploads until a successful poll;
+reconnection also requires a fresh poll. This prevents knowingly overwriting
+unread controls. REST has no revision/atomic compare-and-set: a cloud edit between
+poll and upload can still lose to the later write, and a same-value cloud write
+cannot be distinguished from an unchanged value.
+
+Remote pump/light/AUTO use the same control helpers as buttons. AUTO OFF makes
+MOD IDLE without changing brightness; ON waits for the next scheduled trigger.
+Remote brightness preserves active ramps, except the existing DAWN target
+completion rule. MOD is never accepted as a remote command.
+
+HTTPS verifies certificates, disables redirects, sets a 2000 ms network timeout
+and bounds responses to 511 bytes. Requests run only in the network task
+(priority 3, 8192-byte stack). Failures log error names without request URLs,
+credentials or response bodies. Existing credential storage remains unchanged.
+The configured cloud host remains blynk.cloud; regional routing must be verified
+on the actual device. Network initialization does not erase NVS on failure.
+
+Firmware builds successfully. Protocol/baseline host tests cover malformed data,
+integer bounds, clamping, ignored MOD and echo suppression. Hardware/network task
+timing and real cloud behavior remain unverified. Flash configuration is unchanged;
+the 16 MB / 2 MB mismatch warning remains. The app occupies about 99% of its current
+1 MiB partition, leaving little space for later stages.
+
+### Stage 8 hardware and Blynk checklist
+
+- A: Verify all V0..V8 values against local state; vary sensors, including LDR.
+  Check invalid readings are not uploaded as zero and resume after recovery.
+- B: Change V3 between 0/1; verify pump hardware, snapshot and cloud agree.
+- C: Set V5 to 0, 30, 50 and 100; verify PWM and OLED L-S. During DUSK,
+  set 30 to 50 and verify the next ramp is 45. During DAWN, set at/above target
+  and verify completion without lowering brightness. Hold V5 unchanged across
+  several polls: no repeated remote commands or interference with ramps.
+- D: Change V7; verify OLED AUTO. OFF cancels an active cycle without changing
+  brightness; ON does not start a missed cycle and waits for the next trigger.
+- E: Verify V8 reports 0/1/2 for IDLE/DAWN/DUSK. Writing V8 must not control MOD.
+- F: Use physical pump/light/AUTO buttons; verify the next successful upload
+  publishes their state and subsequent polls do not undo it.
+- G: Disconnect Wi-Fi; verify buttons, pump, sensors, OLED and FSM keep working.
+  Reconnect; verify automatic recovery, fresh polling, telemetry and SNTP as
+  needed. Test unavailable Blynk, bad authentication, invalid/missing datastreams
+  and cold boot without network: bounded retries, no reset or secret logging.
+  Verify first-connection remote state, offline local changes, clock/DST and
+  scheduled 06:00/20:00 behavior on the board.
+
+## Historical Stage 7 OLED application snapshots
 
 The only active screen owner is `tasks/display_task.c`, started once after the
 existing shared I2C bus and OLED device setup. The old main.c display task is

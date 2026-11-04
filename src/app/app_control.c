@@ -25,10 +25,11 @@ static void publish_state(const app_state_t *state)
 // ---------------------------------------------------------
 // LOCAL ACTUATOR COMMANDS
 // ---------------------------------------------------------
-static void toggle_pump(app_state_t *state)
+static void set_pump(app_state_t *state, bool enabled)
 {
     const bool previous = state->pump_enabled;
-    state->pump_enabled = !previous;
+    if (previous == enabled) return;
+    state->pump_enabled = enabled;
     const esp_err_t err = pump_set(state->pump_enabled);
     if (err != ESP_OK) {
         state->pump_enabled = previous; // Retain the last successful command.
@@ -39,10 +40,9 @@ static void toggle_pump(app_state_t *state)
     ESP_LOGI(TAG, "Pump: %s", state->pump_enabled ? "ON" : "OFF");
 }
 
-static void change_light(app_state_t *state, bool increase)
+static void set_light(app_state_t *state, int next)
 {
     const uint8_t previous = state->light.system_level_percent;
-    int next = (int)previous + (increase ? LIGHT_STEP_PERCENT : -LIGHT_STEP_PERCENT);
     if (next > 100) {
         next = 100;
     } else if (next < 0) {
@@ -61,6 +61,14 @@ static void change_light(app_state_t *state, bool increase)
     }
     ESP_LOGI(TAG, "Light: %u%%", (unsigned)state->light.system_level_percent);
     light_fsm_after_manual(&state->light);
+}
+
+static void set_auto(app_state_t *state, light_fsm_context_t *fsm, bool enabled)
+{
+    if (state->light.auto_enabled == enabled) return;
+    const time_snapshot_t now = time_service_now();
+    light_fsm_set_auto(&state->light, fsm, enabled, &now);
+    ESP_LOGI(TAG, "Auto: %s", enabled ? "ON" : "OFF");
 }
 
 static void ramp_light(app_state_t *state)
@@ -107,18 +115,16 @@ static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
         state->last_error = event->data.error;
         break;
     case APP_EVT_PUMP_TOGGLE:
-        toggle_pump(state);
+        set_pump(state, !state->pump_enabled);
         break;
     case APP_EVT_LIGHT_INCREMENT:
-        change_light(state, true);
+        set_light(state, state->light.system_level_percent + LIGHT_STEP_PERCENT);
         break;
     case APP_EVT_LIGHT_DECREMENT:
-        change_light(state, false);
+        set_light(state, state->light.system_level_percent - LIGHT_STEP_PERCENT);
         break;
     case APP_EVT_LIGHT_AUTO_TOGGLE: {
-        const time_snapshot_t now = time_service_now();
-        light_fsm_set_auto(&state->light, fsm, !state->light.auto_enabled, &now);
-        ESP_LOGI(TAG, "Auto: %s", state->light.auto_enabled ? "ON" : "OFF");
+        set_auto(state, fsm, !state->light.auto_enabled);
         break;
     }
     case APP_EVT_TIME_CHECK:
@@ -133,9 +139,13 @@ static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
         ramp_light(state);
         break;
     case APP_EVT_BLYNK_PUMP_SET:
+        set_pump(state, event->data.enabled);
+        break;
     case APP_EVT_BLYNK_LIGHT_SET:
+        set_light(state, event->data.light_percent);
+        break;
     case APP_EVT_BLYNK_AUTO_SET:
-        // Network control remains inactive.
+        set_auto(state, fsm, event->data.enabled);
         break;
     default:
         break;

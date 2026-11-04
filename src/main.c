@@ -41,6 +41,7 @@ static const char *TAG = "GROW_HW_TEST";
 #include "drivers/ldr.h"
 #include "drivers/ultrasonic.h"
 #include "tasks/sensor_task.h"
+#include "tasks/network_task.h"
 
 // Хэндлы для управления шиной и конкретным устройством на ней
 i2c_master_bus_handle_t bus_handle;
@@ -603,10 +604,11 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "=== Запуск тестирования оборудования ===");
 
-    // Инициализация NVS и Wi-Fi
-    ESP_ERROR_CHECK(nvs_flash_init());
-    nvs_flash_init();
-    wifi_init();
+    // Networking is optional; local control does not depend on its startup.
+    const esp_err_t network_err = network_task_start(WIFI_SSID, WIFI_PASS, BLYNK_TOKEN);
+    if (network_err != ESP_OK) {
+        ESP_LOGE(TAG, "Network startup failed: %s", esp_err_to_name(network_err));
+    }
     ESP_ERROR_CHECK(time_task_start());
     ESP_ERROR_CHECK(ramp_task_start());
     // Legacy button startup disabled; input_task owns all four buttons.
@@ -639,17 +641,6 @@ void app_main(void) {
         ESP_LOGE(TAG, "Display startup failed: %s", esp_err_to_name(display_err));
     }
 
-    // Legacy sensor polling/filtering and actuator writers remain disabled.
-    while (1) {
-        sensor_snapshot_t sensors;
-        ESP_ERROR_CHECK(app_control_get_sensors(&sensors));
-        if (sensors.htu21_valid && sensors.soil_valid && sensors.water_valid &&
-            sensors.htu21_error == ESP_OK && sensors.soil_error == ESP_OK &&
-            sensors.water_error == ESP_OK) {
-            // Preserve the existing Blynk contract: soil telemetry is raw ADC.
-            send_to_blynk((int)sensors.temperature_c, (int)sensors.humidity_percent,
-                          sensors.soil_raw, sensors.water_percent);
-        }
-        vTaskDelay(pdMS_TO_TICKS(10000));
-    }
+    // Legacy Wi-Fi/Blynk implementations remain reference-only.
+    vTaskDelete(NULL);
 }

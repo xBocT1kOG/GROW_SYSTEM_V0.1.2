@@ -54,3 +54,6 @@
 // Display failures must not block higher-priority control or sensor tasks.
 #define DISPLAY_TASK_STACK_BYTES      4096
 #define DISPLAY_TASK_PRIORITY            3
+
+#define NETWORK_TASK_STACK_BYTES      8192
+#define NETWORK_TASK_PRIORITY            3

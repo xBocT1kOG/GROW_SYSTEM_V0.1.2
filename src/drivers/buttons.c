@@ -36,7 +36,7 @@ esp_err_t buttons_init(TaskHandle_t task)
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Reject legacy service ownership before changing any pin configuration.
+    // Reject an existing ISR service owner before configuring pins.
     esp_err_t err = gpio_install_isr_service(0);
     if (err != ESP_OK) {
         return err;

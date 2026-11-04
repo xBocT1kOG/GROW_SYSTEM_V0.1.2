@@ -1,4 +1,4 @@
-# Compile the legacy entry point and the staged V0.2 modules.
+# Compile the entry point and active V0.2 modules.
 idf_component_register(
     SRCS
         "main.c"

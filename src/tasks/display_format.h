@@ -5,7 +5,7 @@
 #include "../app/app_state.h"
 
 // ---------------------------------------------------------
-// LEGACY TWO-COLUMN TEXT CELLS
+// OLED TWO-COLUMN TEXT CELLS
 // ---------------------------------------------------------
 #define DISPLAY_FIELD_COUNT 8
 #define DISPLAY_CELL_CHARS 10

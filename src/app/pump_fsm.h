@@ -1,6 +1,6 @@
 #pragma once
 
 // ---------------------------------------------------------
-// FUTURE MODULE
+// RESERVED PUMP FSM MODULE
 // ---------------------------------------------------------
-// Pump FSM placeholder; transitions will run only in control_task.
+// No pump automation is implemented.

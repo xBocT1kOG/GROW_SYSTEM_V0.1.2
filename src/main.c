@@ -4,28 +4,29 @@
 #include "driver/i2c_master.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
-#include "nvs_flash.h"       // Энергонезависимая память (нужна для Wi-Fi)
-#include "esp_wifi.h"        // Драйвер Wi-Fi
-#include "esp_event.h"       // Обработчик системных событий
-#include "esp_http_client.h" // HTTP клиент
+#include "nvs_flash.h"       // NVS support for Wi-Fi
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_http_client.h"
 #include "driver/gpio.h"
-#include "esp_timer.h"       // Для точного отсчета времени
-#include "rom/ets_sys.h"     // Для функции задержки ets_delay_us
+#include "esp_timer.h"       // Monotonic timing
+#include "rom/ets_sys.h"     // Microsecond delay support
 #include "driver/ledc.h"
-#include "esp_log.h" 
+#include "esp_log.h"
 #include "tasks/display_task.h"
 #include <time.h>
 #include "esp_sntp.h"
 #include "freertos/queue.h"
 #include "esp_timer.h"
 
-// Тег для красивого вывода в лог
 static const char *TAG = "GROW_HW_TEST";
 
-// --- НАСТРОЙКИ Wi-Fi & BLYNK ---
+// ---------------------------------------------------------
+// NETWORK CREDENTIALS
+// ---------------------------------------------------------
 #define WIFI_SSID "xBocT1k_2.4G"
-#define WIFI_PASS "******" // Ваш пароль Wi-Fi
-#define BLYNK_TOKEN "******"  // Ваш токен Blynk
+#define WIFI_PASS "******" // Wi-Fi password
+#define BLYNK_TOKEN "******"  // Blynk authentication token
 
 #include "config/board_config.h"
 #include "config/app_config.h"
@@ -43,30 +44,30 @@ static const char *TAG = "GROW_HW_TEST";
 #include "tasks/sensor_task.h"
 #include "tasks/network_task.h"
 
-// Хэндлы для управления шиной и конкретным устройством на ней
+// Shared I2C bus and device handles
 i2c_master_bus_handle_t bus_handle;
 i2c_master_dev_handle_t gy21_handle;
 i2c_master_dev_handle_t oled_handle;
 QueueHandle_t button_queue;
 
-// Глобальные переменные
+// Reference-only legacy state; active state belongs to control_task
 volatile float temp = 0;
 volatile float hum = 0;
 volatile int cms_raw = 0;
 volatile int water_percentage = 0;
-volatile int max_light = 6; // Максимальный уровень освещения (0-10), по умолчанию 6
-volatile int sunrise_start = 6; // Время начала рассвета (6 утра)
-volatile int sunset_start = 20; // Время начала заката (20 вечера)
-const char * volatile current_mode = "IDLE"; // Текущий режим работы
-volatile int current_light_level = 0; // Текущий уровень освещения (0-10)
-volatile int sun_period = 1200000; // Период проверки времени (20 минут в миллисекундах)
+volatile int max_light = 6; // Legacy lighting target; unused by the active FSM
+volatile int sunrise_start = 6; // Legacy dawn hour
+volatile int sunset_start = 20; // Legacy dusk hour
+const char * volatile current_mode = "IDLE"; // Legacy mode
+volatile int current_light_level = 0; // Legacy brightness
+volatile int sun_period = 1200000; // Legacy polling interval
 volatile bool pump_state = false;
 
 // ---------------------------------------------------------
-// Функция инициализации I2C мастера
+// SHARED I2C INITIALIZATION
 // ---------------------------------------------------------
 void init_i2c_master(void) {
-    // Настройка физической шины
+    // Configure the shared I2C bus
     i2c_master_bus_config_t i2c_mst_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = I2C_MASTER_NUM,
@@ -77,9 +78,9 @@ void init_i2c_master(void) {
     };
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
 
-    // HTU21 device registration belongs to htu21_init(); OLED stays legacy.
-    i2c_device_config_t oled_cfg = { 
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7, 
+    // Register OLED here; htu21_init() registers the temperature sensor.
+    i2c_device_config_t oled_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = OLED_I2C_ADDRESS,
         .scl_speed_hz = I2C_CLOCK_HZ
     };
@@ -90,23 +91,21 @@ void init_i2c_master(void) {
 }
 
 // ---------------------------------------------------------
-// Функция чтения данных с GY-21
+// LEGACY SENSOR READER (REFERENCE ONLY)
 // ---------------------------------------------------------
 void read_gy21_data(float *temperature, float *humidity) {
-    uint8_t cmd_temp = 0xF3; 
-    uint8_t cmd_hum = 0xF5;  
+    uint8_t cmd_temp = 0xF3;
+    uint8_t cmd_hum = 0xF5;
     uint8_t data[3];
 
-    // Чтение температуры
     i2c_master_transmit(gy21_handle, &cmd_temp, 1, -1);
-    vTaskDelay(pdMS_TO_TICKS(50)); // Ожидание конвертации аппаратно
+    vTaskDelay(pdMS_TO_TICKS(50)); // Wait for sensor conversion
     i2c_master_receive(gy21_handle, data, 3, -1);
-    
-    // Сборка двух байт (MSB и LSB) и вычисление по даташиту
+
+    // Decode the sensor bytes using the datasheet formula
     uint16_t raw_temp = (data[0] << 8) | (data[1] & 0xFC);
     *temperature = -46.85 + (175.72 * raw_temp / 65536.0);
 
-    // Чтение влажности
     i2c_master_transmit(gy21_handle, &cmd_hum, 1, -1);
     vTaskDelay(pdMS_TO_TICKS(50));
     i2c_master_receive(gy21_handle, data, 3, -1);
@@ -116,7 +115,7 @@ void read_gy21_data(float *temperature, float *humidity) {
 }
 
 // ---------------------------------------------------------
-// ОБРАБОТЧИК И ИНИЦИАЛИЗАЦИЯ WI-FI
+// LEGACY WI-FI AND TIME SETUP (REFERENCE ONLY)
 // ---------------------------------------------------------
 static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -130,11 +129,11 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
 }
 
 void wifi_init(void) {
-    ESP_ERROR_CHECK(nvs_flash_init()); // NVS обязателен для работы Wi-Fi
+    ESP_ERROR_CHECK(nvs_flash_init()); // Wi-Fi requires NVS initialization
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
-    
+
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
@@ -151,11 +150,11 @@ void wifi_init(void) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    // --- Инициализация службы времени (NTP) ---
+    // Configure the legacy SNTP client
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "pool.ntp.org");
 
-    // Установка локального часового пояса с автоматическим переходом на летнее/зимнее время
+    // Apply local timezone and daylight-saving rules
     setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
     tzset();
     time_service_init(); // Register sync validity after configuring local time.
@@ -163,22 +162,22 @@ void wifi_init(void) {
 }
 
 // ---------------------------------------------------------
-// ОТПРАВКА ДАННЫХ В BLYNK (HTTP REST API)
+// LEGACY BLYNK TELEMETRY (REFERENCE ONLY)
 // ---------------------------------------------------------
 void send_to_blynk(int temp, int hum, int cms_raw, int water_percentage) {
     char url[256];
-    // Собираем строку запроса с нашими переменными
-    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V0=%d&V1=%d&V2=%d&V4=%d", 
+
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V0=%d&V1=%d&V2=%d&V4=%d",
              BLYNK_TOKEN, temp, hum, cms_raw, water_percentage);
 
     esp_http_client_config_t config = {
         .url = url,
         .method = HTTP_METHOD_GET,
     };
-    
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
-    
+
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Успех BLYNK: T=%d, H=%d, CMS=%d, Water=%d", temp, hum, cms_raw, water_percentage);
     } else {
@@ -188,22 +187,22 @@ void send_to_blynk(int temp, int hum, int cms_raw, int water_percentage) {
 }
 
 // ---------------------------------------------------------
-// ОТПРАВКА ДАННЫХ В BLYNK (HTTP REST API) - ПОЛЗУНОК
+// LEGACY BLYNK LIGHT UPLOAD (REFERENCE ONLY)
 // ---------------------------------------------------------
 void send_to_blynk_slyder_button(int current_light_level) {
     char url[256];
-    // Собираем строку запроса с нашими переменными
-    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V5=%d", 
+
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V5=%d",
              BLYNK_TOKEN, current_light_level);
 
     esp_http_client_config_t config = {
         .url = url,
         .method = HTTP_METHOD_GET,
     };
-    
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
-    
+
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Успех BLYNK: V5=%d", current_light_level);
     } else {
@@ -213,7 +212,7 @@ void send_to_blynk_slyder_button(int current_light_level) {
 }
 
 // ---------------------------------------------------------
-// ЧТЕНИЕ ДАННЫХ ИЗ BLYNK (Кнопка насоса) - ИСПРАВЛЕННОЕ
+// LEGACY BLYNK PUMP POLL (REFERENCE ONLY)
 // ---------------------------------------------------------
 int read_blynk_pump_button(void) {
     char url[256];
@@ -226,52 +225,52 @@ int read_blynk_pump_button(void) {
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     int button_state = 0;
-    
-    // 1. Открываем соединение (0 - означает стандартную длину)
+
+    // Open the HTTP connection
     if (esp_http_client_open(client, 0) == ESP_OK) {
-        
-        // 2. Получаем системные заголовки от сервера
+
+        // Fetch response headers
         esp_http_client_fetch_headers(client);
-        
-        // 3. Читаем само тело ответа
+
+        // Read the response body
         char response[16] = {0};
         int read_bytes = esp_http_client_read(client, response, sizeof(response) - 1);
-        
-        if (read_bytes > 0) {            
-            // Проверяем наличие единицы в ответе
+
+        if (read_bytes > 0) {
+            // Interpret the legacy switch response
             if (strchr(response, '1') != NULL) {
                 button_state = 1;
             }
         }
     } else {
-        // Если нет интернета или сервер недоступен
+        // Use the legacy fallback on connection failure
         esp_err_t err = esp_http_client_perform(client);
         ESP_LOGW("BLYNK", "Ошибка получения состояния кнопки: %s", esp_err_to_name(err));
     }
 
-    // 4. Обязательно очищаем память
+    // Release the HTTP client
     esp_http_client_cleanup(client);
 
-    return button_state; // Вернет 1, если кнопка нажата, и 0, если выключена
+    return button_state; // Return the decoded switch state
 }
 
 // ---------------------------------------------------------
-// ОТПРАВКА СОСТОЯНИЯ НАСОСА В BLYNK (HTTP REST API)
+// LEGACY BLYNK PUMP UPLOAD (REFERENCE ONLY)
 // ---------------------------------------------------------
 void send_to_blynk_pump_state(int pump_state) {
     char url[256];
-    // Собираем строку запроса с нашими переменными
-    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V3=%d", 
+
+    snprintf(url, sizeof(url), "http://blynk.cloud/external/api/batch/update?token=%s&V3=%d",
              BLYNK_TOKEN, pump_state);
 
     esp_http_client_config_t config = {
         .url = url,
         .method = HTTP_METHOD_GET,
     };
-    
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
-    
+
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Успех BLYNK: V3=%d", pump_state);
     } else {
@@ -281,91 +280,89 @@ void send_to_blynk_pump_state(int pump_state) {
 }
 
 // ---------------------------------------------------------
-// ИНИЦИАЛИЗАЦИЯ УЛЬТРАЗВУКОВОГО ДАТЧИКА
+// LEGACY ULTRASONIC SETUP (REFERENCE ONLY)
 // ---------------------------------------------------------
 void init_ultrasonic(void) {
-    // Настраиваем TRIG как выход
+
     gpio_reset_pin(ULTRASONIC_TRIG_PIN);
     gpio_set_direction(ULTRASONIC_TRIG_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(ULTRASONIC_TRIG_PIN, 0); // По умолчанию выключен
+    gpio_set_level(ULTRASONIC_TRIG_PIN, 0);
 
-    // Настраиваем ECHO как вход
     gpio_reset_pin(ULTRASONIC_ECHO_PIN);
     gpio_set_direction(ULTRASONIC_ECHO_PIN, GPIO_MODE_INPUT);
 }
 
 // ---------------------------------------------------------
-// ФУНКЦИЯ ИЗМЕРЕНИЯ ДИСТАНЦИИ УЛЬТРАЗВУКОМ
+// LEGACY ULTRASONIC READ (REFERENCE ONLY)
 // ---------------------------------------------------------
 float get_water_distance_cm(void) {
-    // 1. Посылаем стартовый импульс длиной 10 микросекунд
+    // Send a 10 us trigger pulse
     gpio_set_level(ULTRASONIC_TRIG_PIN, 1);
     ets_delay_us(10);
     gpio_set_level(ULTRASONIC_TRIG_PIN, 0);
 
-    // 2. Ждем, пока датчик поднимет ECHO в HIGH (начало ответа)
+    // Wait for the rising echo edge
     int64_t start_wait = esp_timer_get_time();
     while (gpio_get_level(ULTRASONIC_ECHO_PIN) == 0) {
-        // Таймаут, чтобы код не завис, если датчик отключится
+        // Bound the wait if the sensor is disconnected
         if (esp_timer_get_time() - start_wait > 20000) {
             ESP_LOGE(TAG, "Таймаут датчика уровня: нет ответа");
-            return -1.0; 
+            return -1.0;
         }
     }
-    int64_t echo_start = esp_timer_get_time(); // Фиксируем время старта
+    int64_t echo_start = esp_timer_get_time();
 
-    // 3. Ждем, пока датчик опустит ECHO в LOW (конец ответа)
+    // Wait for the falling echo edge
     while (gpio_get_level(ULTRASONIC_ECHO_PIN) == 1) {
-        if (esp_timer_get_time() - echo_start > 30000) { // Примерно 5 метров
+        if (esp_timer_get_time() - echo_start > 30000) { // Bound the echo pulse duration
             ESP_LOGE(TAG, "Таймаут датчика уровня: сигнал потерян");
             return -1.0;
         }
     }
-    int64_t echo_end = esp_timer_get_time(); // Фиксируем время возврата
+    int64_t echo_end = esp_timer_get_time();
 
-    // 4. Считаем дистанцию
+    // Convert round-trip time to distance
     int64_t duration = echo_end - echo_start;
     float distance_cm = (duration * 0.0343) / 2.0;
-    
+
     return distance_cm;
 }
 
-// Функция сортировки для фильтра
+// Compare samples for the legacy median filter
 int compare_floats(const void *a, const void *b) {
-    float fa = *(const float*) a; 
+    float fa = *(const float*) a;
     float fb = *(const float*) b;
     return (fa > fb) - (fa < fb);
 }
 
-// Новая функция, которую нужно вызывать в главном цикле
+// Legacy filtered acquisition; not called by sensor_task
 float get_stable_water_level(void) {
     const int NUM_READINGS = 20;
     float readings[NUM_READINGS];
     int valid_count = 0;
 
-    // Делаем 20 быстрых замеров
+    // Collect a batch of samples
     for (int i = 0; i < NUM_READINGS; i++) {
-        float dist = get_water_distance_cm(); // Твоя базовая функция
-        if (dist > 0 && dist < 400) {         // Отсекаем явный бред (таймауты)
+        float dist = get_water_distance_cm();
+        if (dist > 0 && dist < 400) {         // Discard invalid measurements
             readings[valid_count] = dist;
             valid_count++;
         }
-        vTaskDelay(pdMS_TO_TICKS(100));        // Обязательная пауза 100мс, чтобы звук в баке утих!
+        vTaskDelay(pdMS_TO_TICKS(100));        // Allow echoes in the tank to decay before the next trigger
     }
 
-    // Если всё плохо и датчик отвалился
-    if (valid_count == 0) return -1.0; 
-    
-    // Если есть данные - сортируем их
+    // Return an error when no valid samples remain
+    if (valid_count == 0) return -1.0;
+
     qsort(readings, valid_count, sizeof(float), compare_floats);
 
-    // Возвращаем значение из середины отсортированного списка
-    return readings[valid_count / 2]; 
+    // Select the middle sorted sample
+    return readings[valid_count / 2];
 }
 
-// Функция маппинга
+// Legacy distance-to-percentage conversion
 int get_water_percentage(float current_distance) {
-    // 1. Ограничиваем (clamp) значения, чтобы не вылезти за 0-100%
+    // Clamp distance to the configured tank endpoints
     if (current_distance > WATER_DISTANCE_EMPTY_CM) {
         current_distance = WATER_DISTANCE_EMPTY_CM;
     }
@@ -373,17 +370,17 @@ int get_water_percentage(float current_distance) {
         current_distance = WATER_DISTANCE_FULL_CM;
     }
 
-    // 2. Сама математика (инвертированная, так как чем меньше см, тем больше воды)
-    // (16 - текущая_дистанция) / (16 - 6) * 100
+    // Shorter distance corresponds to a higher water level
+
     float percentage = ((WATER_DISTANCE_EMPTY_CM - current_distance) / (WATER_DISTANCE_EMPTY_CM - WATER_DISTANCE_FULL_CM)) * 100.0f;
 
-    // 3. Округляем до математически правильного целого числа и возвращаем
+    // Round to the nearest integer
     return (int)(percentage + 0.5f);
 }
 
-// 1. Инициализация ШИМ (вызвать один раз внутри app_main)
+// Legacy PWM setup; the active path uses light_pwm_init()
 void init_pwm_converter(void) {
-    // Настройка таймера
+
     ledc_timer_config_t ledc_timer = {
         .speed_mode       = LIGHT_PWM_MODE,
         .timer_num        = LIGHT_PWM_TIMER,
@@ -393,35 +390,33 @@ void init_pwm_converter(void) {
     };
     ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
-    // Настройка канала и привязка к пину
     ledc_channel_config_t ledc_channel = {
         .speed_mode     = LIGHT_PWM_MODE,
         .channel        = LIGHT_PWM_CHANNEL,
         .timer_sel      = LIGHT_PWM_TIMER,
         .intr_type      = LEDC_INTR_DISABLE,
         .gpio_num       = LIGHT_PWM_GPIO,
-        .duty           = 0, // При старте выдаем 0 (0 Вольт на выходе)
+        .duty           = 0, // Start with zero duty
         .hpoint         = 0
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
-    
+
     ESP_LOGI("PWM", "ШИМ конвертер инициализирован на пине %d", LIGHT_PWM_GPIO);
 }
 
-// 2. Функция маппинга (вызывать при получении данных от ползунка Blynk)
+// Legacy slider conversion; not used by active Blynk control
 void set_converter_level(int slider_value) {
-    // Жестко ограничиваем входные данные (от 0 до 10)
+    // Clamp the legacy slider range
     if (slider_value < 0) slider_value = 0;
     if (slider_value > 10) slider_value = 10;
 
-    // Конвертируем уровень (0-10) в скважность (0-255)
-    // Умножаем на 25.5 для равномерного шага
+    // Map the legacy slider value to PWM duty
+
     uint32_t duty = (uint32_t)(slider_value * 25.5f);
 
-    // Применяем новые настройки к железу
     ESP_ERROR_CHECK(ledc_set_duty(LIGHT_PWM_MODE, LIGHT_PWM_CHANNEL, duty));
     ESP_ERROR_CHECK(ledc_update_duty(LIGHT_PWM_MODE, LIGHT_PWM_CHANNEL));
-    
+
     ESP_LOGI("PWM", "Уровень: %d/10 -> Скважность: %lu/255", slider_value, (unsigned long)duty);
 }
 
@@ -436,158 +431,155 @@ int read_blynk_slider(void) {
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     int button_slider = 0;
-    
-    // 1. Открываем соединение (0 - означает стандартную длину)
+
+    // Open the HTTP connection
     if (esp_http_client_open(client, 0) == ESP_OK) {
-        
-        // 2. Получаем системные заголовки от сервера
+
+        // Fetch response headers
         esp_http_client_fetch_headers(client);
-        
-        // 3. Читаем само тело ответа
+
+        // Read the response body
         char response[16] = {0};
         int read_bytes = esp_http_client_read(client, response, sizeof(response) - 1);
-        
-        if (read_bytes > 0) {            
-            // Проверяем наличие числа в ответе
-            button_slider = atoi(response); // Преобразуем строку в число
+
+        if (read_bytes > 0) {
+
+            button_slider = atoi(response);
             if (button_slider < 0 || button_slider > 10) {
                 ESP_LOGW("BLYNK", "Получено некорректное значение ползунка: %d", button_slider);
-                button_slider = 0; // Сбрасываем до безопасного значения
+                button_slider = 0; // Use the legacy fallback for out-of-range values
         }
         }
     } else {
-        // Если нет интернета или сервер недоступен
+        // Use the legacy fallback on connection failure
         esp_err_t err = esp_http_client_perform(client);
         ESP_LOGW("BLYNK", "Ошибка получения состояния кнопки: %s", esp_err_to_name(err));
     }
 
-    // 4. Обязательно очищаем память
+    // Release the HTTP client
     esp_http_client_cleanup(client);
 
-    return button_slider; // Вернет значение ползунка от 0 до 10
+    return button_slider; // Return the decoded legacy slider value
 }
 
-// Legacy OLED task moved to tasks/display_task.c; see Git history for reference.
+// Active OLED rendering belongs to display_task.
 
-// Функция получения текущего часа (0-23) с учетом локального часового пояса
+// Read the local hour for the legacy lighting task
 int get_current_hour(void) {
     time_t now;
     struct tm timeinfo;
-    
-    // Получаем текущее системное время (в секундах)
+
     time(&now);
-    
-    // Преобразуем секунды в структуру с часами, минутами и днями 
-    // с учетом локального часового пояса
+
+    // Convert system time to local calendar time
+
     localtime_r(&now, &timeinfo);
-    
-    // tm_hour всегда возвращает int в диапазоне от 0 до 23
+
     return timeinfo.tm_hour;
 }
 
 void auto_light(void *pvParameters) {
     while (1) {
-        int current_hour = get_current_hour(); // Получаем текущий час (0-23)
-        current_light_level = read_blynk_slider(); // Получаем уровень освещения из Blynk
+        int current_hour = get_current_hour();
+        current_light_level = read_blynk_slider();
 
-        // Если текущее время находится между рассветом и закатом
+        // Legacy daytime ramp; active scheduling belongs to light_fsm
         if (current_hour >= sunrise_start && current_hour < sunset_start) {
-            current_light_level = read_blynk_slider(); // Получаем уровень освещения из Blynk
+            current_light_level = read_blynk_slider();
             if (current_light_level < max_light) {
-                current_light_level += 1; // Постепенно увеличиваем уровень освещения
+                current_light_level += 1;
                 set_converter_level(current_light_level);
-                send_to_blynk_slyder_button(current_light_level); // Отправляем обновленный уровень в Blynk
+                send_to_blynk_slyder_button(current_light_level);
                 ESP_LOGI(TAG, "Уровень освещения обновлен: %d", current_light_level);
-                current_mode = "DAWN"; // Устанавливаем режим в "рассвет"
+                current_mode = "DAWN";
             }
             }
-        // Если текущее время находится между закатом и рассветом
+        // Legacy nighttime ramp
         else if (current_hour >= sunset_start || current_hour < sunrise_start) {
-            current_light_level = read_blynk_slider(); // Получаем уровень освещения из Blynk
+            current_light_level = read_blynk_slider();
             if (current_light_level > 0) {
-                current_light_level -= 1; // Постепенно уменьшаем уровень освещения
+                current_light_level -= 1;
                 set_converter_level(current_light_level);
-                send_to_blynk_slyder_button(current_light_level); // Отправляем обновленный уровень в Blynk
+                send_to_blynk_slyder_button(current_light_level);
                 ESP_LOGI(TAG, "Уровень освещения обновлен: %d", current_light_level);
-                current_mode = "DUSK"; // Устанавливаем режим в "закат"
-                
+                current_mode = "DUSK";
+
             }
         }
 
         else {
             ESP_LOGI(TAG, "Текущее время вне диапазона рассвета и заката. Освещение не изменяется.");
-            current_mode = "IDLE"; // Устанавливаем режим в "ожидание"
-             
+            current_mode = "IDLE";
+
         }
-        vTaskDelay(pdMS_TO_TICKS(sun_period)); // Ждем 20 минут
+        vTaskDelay(pdMS_TO_TICKS(sun_period)); // Wait for the legacy polling interval
     }
 }
 
 // ---------------------------------------------------------
-// ОБРАБОТЧИК ПРЕРЫВАНИЯ КНОПКИ (для антидребезга)
+// LEGACY BUTTON ISR (REFERENCE ONLY)
 // ---------------------------------------------------------
 static void IRAM_ATTR button_isr_handler(void* arg) {
     static uint64_t last_isr_time = 0;
-    uint64_t current_time = esp_timer_get_time(); // Время в микросекундах
+    uint64_t current_time = esp_timer_get_time();
 
-    // Игнорируем нажатия быстрее 1с (1 000 000 мкс) - антидребезг
+    // Reject repeated edges within the legacy debounce window
     if (current_time - last_isr_time > 1000000) {
         int pin_num = (int)arg;
-        // Отправляем номер пина в очередь, не блокируя процессор
-        xQueueSendFromISR(button_queue, &pin_num, NULL); 
+        // Submit the pin number without blocking the ISR
+        xQueueSendFromISR(button_queue, &pin_num, NULL);
         last_isr_time = current_time;
     }
 }
 
-//---------------------------------------------------------
-// ЗАДАЧА ОБРАБОТКИ НАЖАТИЯ КНОПКИ
-//---------------------------------------------------------
+// ---------------------------------------------------------
+// LEGACY PUMP TASK (REFERENCE ONLY)
+// ---------------------------------------------------------
 void pump_button_task(void *pvParameters) {
     int received_pin;
     while (1) {
-        // Задача спит, пока в очередь не придет сигнал от прерывания
+        // Wait for a queued button edge
         if (xQueueReceive(button_queue, &received_pin, portMAX_DELAY)) {
             ESP_LOGI(TAG, "Кнопка нажата!");
 
-            // Инвертируем локальное состояние
-            pump_state = !pump_state; 
+            pump_state = !pump_state;
 
-            // 1. TODO: Включить/выключить физический пин реле насоса
+            // Legacy direct GPIO write; inactive in V0.2
             gpio_set_level(PUMP_PIN, pump_state);
 
-            // 2. TODO: Отправить новое состояние в Blynk
+            // Legacy cloud update; inactive in V0.2
             send_to_blynk_pump_state(pump_state);
         }
     }
 }
 
-//---------------------------------------------------------
-// ИНИЦИАЛИЗАЦИЯ КНОПКИ С ПРЕРЫВАНИЕМ
-//---------------------------------------------------------
+// ---------------------------------------------------------
+// LEGACY BUTTON SETUP (REFERENCE ONLY)
+// ---------------------------------------------------------
 void pump_button_init(void) {
-    // Создаем очередь на 10 элементов
+
     button_queue = xQueueCreate(10, sizeof(int));
     xTaskCreate(pump_button_task, "pump_button_task", 4096, NULL, 10, NULL);
 
-    // Настраиваем пин кнопки (подтяжка к питанию, срабатывание по падению напряжения)
+    // Configure an active-low button with a pull-up
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << PUMP_BUTTON_PIN),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = 1,
         .pull_down_en = 0,
-        .intr_type = GPIO_INTR_NEGEDGE // Срабатывает при нажатии (замыкании на землю)
+        .intr_type = GPIO_INTR_NEGEDGE // Falling edge indicates a press
     };
     gpio_config(&io_conf);
 
-    // Глобальная установка службы прерываний (если еще не была вызвана ранее в коде)
-    ESP_ERROR_CHECK(gpio_install_isr_service(0)); 
+    // Install the GPIO interrupt service
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
-    // Привязываем функцию ISR к конкретному пину
+    // Attach the ISR to the button pin
     gpio_isr_handler_add(PUMP_BUTTON_PIN, button_isr_handler, (void*) PUMP_BUTTON_PIN);
 }
 
 // ---------------------------------------------------------
-// ТОЧКА ВХОДА (Главная программа)
+// APPLICATION ENTRY POINT
 // ---------------------------------------------------------
 void app_main(void) {
 
@@ -599,8 +591,8 @@ void app_main(void) {
     ESP_ERROR_CHECK(app_control_start());
     ESP_ERROR_CHECK(input_task_start());
 
-    // Инициализация ультразвукового датчика
-    ESP_ERROR_CHECK(ultrasonic_init()); // Legacy ultrasonic startup disabled.
+    // Initialize the active ultrasonic driver
+    ESP_ERROR_CHECK(ultrasonic_init());
 
     ESP_LOGI(TAG, "=== Запуск тестирования оборудования ===");
 
@@ -613,14 +605,14 @@ void app_main(void) {
     ESP_ERROR_CHECK(ramp_task_start());
     // Legacy button startup disabled; input_task owns all four buttons.
 
-    // Ждем 5 секунд, чтобы Wi-Fi успел подключиться
+    // Retain the startup settling delay
     vTaskDelay(pdMS_TO_TICKS(5000));
 
-    // 1. Инициализация I2C
+    // Initialize the shared I2C bus
     init_i2c_master();
     ESP_LOGI(TAG, "Шина I2C инициализирована на пинах %d (SDA) и %d (SCL)", I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
 
-    // 2. Инициализация ADC1 (Емкостной датчик)
+    // Create the shared ADC1 unit
     adc_oneshot_unit_handle_t adc1_handle;
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = SENSOR_ADC_UNIT,

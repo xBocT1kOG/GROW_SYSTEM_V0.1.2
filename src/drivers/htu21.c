@@ -27,7 +27,7 @@ static esp_err_t read_raw(uint8_t command, uint16_t *raw)
 {
     esp_err_t err = i2c_master_transmit(device, &command, 1, 100);
     if (err != ESP_OK) return err;
-    // Legacy conversion sequence; allow a tick of margin beyond 50 ms.
+    // Allow a tick of margin beyond the 50 ms sensor conversion time.
     vTaskDelay(pdMS_TO_TICKS(60));
     uint8_t data[3];
     err = i2c_master_receive(device, data, sizeof(data), 100);

@@ -1,6 +1,6 @@
 #include "pump_fsm.h"
 
 // ---------------------------------------------------------
-// FUTURE MODULE
+// RESERVED PUMP FSM MODULE
 // ---------------------------------------------------------
-// Implementation deferred until subsystem migration.
+// No pump automation; control_task handles manual pump commands.

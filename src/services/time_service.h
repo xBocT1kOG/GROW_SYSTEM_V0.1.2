@@ -16,6 +16,6 @@ typedef struct {
     time_t timestamp;
 } time_snapshot_t;
 
-// Register before legacy SNTP starts; timezone must be configured first.
+// Register after TCP/IP initialization and before starting SNTP.
 void time_service_init(void);
 time_snapshot_t time_service_now(void);

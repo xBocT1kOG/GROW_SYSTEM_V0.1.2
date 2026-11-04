@@ -65,13 +65,6 @@ esp_err_t network_service_init(const char *ssid, const char *password, const cha
         if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_') return ESP_ERR_INVALID_ARG;
     }
     strcpy(device_token, token);
-    // Preserve the existing timezone and SNTP configuration outside the FSM.
-    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
-    tzset();
-    time_service_init();
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_init();
     // HTTP library debug messages may include query URLs containing credentials.
     esp_log_level_set("HTTP_CLIENT", ESP_LOG_NONE);
     esp_err_t err = nvs_flash_init();
@@ -97,6 +90,13 @@ esp_err_t network_service_init(const char *ssid, const char *password, const cha
     if (err != ESP_OK) return err;
     err = esp_wifi_start();
     if (err != ESP_OK) return err;
+    // Initialize time and SNTP only after the TCP/IP stack is ready.
+    setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
+    tzset();
+    time_service_init();
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
     initialized = true;
     return ESP_OK;
 }

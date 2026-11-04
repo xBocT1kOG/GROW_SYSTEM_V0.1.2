@@ -1,3 +1,4 @@
+#include "../diagnostics/diagnostics.h"
 #include "app_control.h"
 #include "light_fsm.h"
 #include "../config/app_config.h"
@@ -27,6 +28,7 @@ static void publish_state(const app_state_t *state)
 // ---------------------------------------------------------
 static void set_pump(app_state_t *state, bool enabled)
 {
+    diagnostics_increment(DIAG_pump_commands);
     const bool previous = state->pump_enabled;
     if (previous == enabled) return;
     state->pump_enabled = enabled;
@@ -42,6 +44,7 @@ static void set_pump(app_state_t *state, bool enabled)
 
 static void set_light(app_state_t *state, int next)
 {
+    diagnostics_increment(DIAG_light_commands);
     const uint8_t previous = state->light.system_level_percent;
     if (next > 100) {
         next = 100;
@@ -65,6 +68,7 @@ static void set_light(app_state_t *state, int next)
 
 static void set_auto(app_state_t *state, light_fsm_context_t *fsm, bool enabled)
 {
+    diagnostics_increment(DIAG_auto_commands);
     if (state->light.auto_enabled == enabled) return;
     const time_snapshot_t now = time_service_now();
     light_fsm_set_auto(&state->light, fsm, enabled, &now);
@@ -73,6 +77,7 @@ static void set_auto(app_state_t *state, light_fsm_context_t *fsm, bool enabled)
 
 static void ramp_light(app_state_t *state)
 {
+    diagnostics_increment(DIAG_light_ramp_ticks);
     const light_state_t previous = state->light;
     light_fsm_ramp(&state->light);
     if (state->light.system_level_percent == previous.system_level_percent) {
@@ -85,6 +90,7 @@ static void ramp_light(app_state_t *state)
         ESP_LOGE(TAG, "Ramp failed: %s", esp_err_to_name(err));
         return;
     }
+    diagnostics_increment(DIAG_light_ramp_steps);
     ESP_LOGI(TAG, "Ramp: %u%%", (unsigned)state->light.system_level_percent);
 }
 
@@ -94,6 +100,7 @@ static void ramp_light(app_state_t *state)
 
 static void update_time_sync(app_state_t *state, const time_snapshot_t *now)
 {
+    if (!state->time_synced && now->synced) diagnostics_increment(DIAG_time_sync_events);
     if (!state->time_synced && now->synced && state->light.auto_enabled) {
         light_fsm_evaluate_current_phase(&state->light, now);
     }
@@ -170,6 +177,7 @@ static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
 static void control_task(void *argument)
 {
     (void)argument;
+    diagnostics_sample_stack(DIAG_TASK_control);
     app_state_t state = {
         .light = {
             .system_level_percent = 0,
@@ -187,6 +195,7 @@ static void control_task(void *argument)
     ESP_LOGI(TAG, "Time not synced: schedule skipped until SNTP sync");
 
     for (;;) {
+        diagnostics_sample_stack(DIAG_TASK_control);
         if (xQueueReceive(event_queue, &event, portMAX_DELAY) == pdTRUE) {
             handle_event(&state, &fsm, &event);
             publish_state(&state);
@@ -232,8 +241,9 @@ esp_err_t app_control_post_event(const app_event_t *event, TickType_t wait_ticks
     if (event_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    return xQueueSend(event_queue, event, wait_ticks) == pdTRUE
-        ? ESP_OK : ESP_ERR_TIMEOUT;
+    if (xQueueSend(event_queue, event, wait_ticks) == pdTRUE) return ESP_OK;
+    diagnostics_increment(DIAG_app_event_queue_overflows);
+    return ESP_ERR_TIMEOUT;
 }
 
 esp_err_t app_control_get_sensors(sensor_snapshot_t *snapshot)

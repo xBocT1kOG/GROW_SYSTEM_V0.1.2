@@ -2,6 +2,9 @@
 idf_component_register(
     SRCS
         "main.c"
+        "diagnostics/diagnostics.c"
+        "diagnostics/diagnostics_json.c"
+        "diagnostics/diagnostics_http.c"
         "app/app_control.c"
         "app/light_fsm.c"
         "app/pump_fsm.c"

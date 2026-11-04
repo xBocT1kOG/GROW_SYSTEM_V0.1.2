@@ -1,3 +1,4 @@
+#include "../diagnostics/diagnostics.h"
 #include "input_task.h"
 #include "../app/app_control.h"
 #include "../config/app_config.h"
@@ -48,6 +49,7 @@ static bool sample_buttons(button_debounce_t *states, uint32_t edges)
             (TickType_t)(now - state->changed_at) >= interval_ticks(BUTTON_DEBOUNCE_MS)) {
             state->stable_pressed = state->candidate_pressed;
             if (state->stable_pressed) {
+                diagnostics_increment(DIAG_button_events);
                 const app_event_t event = { .type = press_events[i] };
                 const esp_err_t err = app_control_post_event(&event, 0);
                 if (err != ESP_OK) {
@@ -67,6 +69,7 @@ static bool sample_buttons(button_debounce_t *states, uint32_t edges)
 static void input_task(void *argument)
 {
     (void)argument;
+    diagnostics_sample_stack(DIAG_TASK_input);
     uint32_t notifications = 0;
     // GPIO initialization must finish before sampling starts.
     do {
@@ -75,6 +78,7 @@ static void input_task(void *argument)
 
     button_debounce_t states[BUTTON_COUNT] = {0};
     for (;;) {
+        diagnostics_sample_stack(DIAG_TASK_input);
         const bool active = sample_buttons(states, notifications);
         notifications = 0;
         xTaskNotifyWait(0, UINT32_MAX, &notifications,

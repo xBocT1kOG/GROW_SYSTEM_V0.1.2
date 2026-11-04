@@ -1,3 +1,4 @@
+#include "../diagnostics/diagnostics.h"
 #include "network_service.h"
 #include "network_protocol.h"
 #include "time_service.h"
@@ -47,6 +48,7 @@ void network_service_reconnect(void)
 {
     if (!network_service_connected()) {
         // Retry only at the normal network period, including startup failures.
+        diagnostics_increment(DIAG_wifi_reconnects);
         esp_err_t err = esp_wifi_connect();
         if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
             ESP_LOGW(TAG, "Wi-Fi connect failed: %s", esp_err_to_name(err));

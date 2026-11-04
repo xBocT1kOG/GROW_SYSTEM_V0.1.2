@@ -1,4 +1,6 @@
+#include "../diagnostics/diagnostics.h"
 #include "network_task.h"
+#include "../diagnostics/diagnostics_http.h"
 #include "network_sync.h"
 #include "../services/network_service.h"
 #include "../services/time_service.h"
@@ -37,6 +39,7 @@ static int send_control(unsigned index, int remote, int local, app_event_type_t 
 static void network_task(void *argument)
 {
     (void)argument;
+    diagnostics_sample_stack(DIAG_TASK_network);
     TickType_t last_poll = xTaskGetTickCount() - pdMS_TO_TICKS(BLYNK_CONTROL_POLL_MS);
     TickType_t last_upload = xTaskGetTickCount() - pdMS_TO_TICKS(BLYNK_TELEMETRY_PERIOD_MS);
     TickType_t last_connect = xTaskGetTickCount() - pdMS_TO_TICKS(5000);
@@ -44,6 +47,7 @@ static void network_task(void *argument)
     bool reported_sync = false;
     bool poll_ready = false;
     for (;;) {
+        diagnostics_sample_stack(DIAG_TASK_network);
         TickType_t now = xTaskGetTickCount();
         bool connected = network_service_connected();
         if (connected != reported_connected) {
@@ -75,6 +79,7 @@ static void network_task(void *argument)
             last_poll = now;
             network_controls_t remote;
             esp_err_t err = network_service_poll(&remote);
+            diagnostics_increment(err == ESP_OK ? DIAG_blynk_poll_ok : DIAG_blynk_poll_errors);
             if (err != ESP_OK) {
                 ESP_LOGW(TAG, "Blynk control poll failed: %s", esp_err_to_name(err));
                 poll_ready = false;
@@ -100,6 +105,7 @@ static void network_task(void *argument)
             app_state_t state;
             app_state_get_snapshot(&state);
             esp_err_t err = network_service_upload(&state);
+            diagnostics_increment(err == ESP_OK ? DIAG_blynk_upload_ok : DIAG_blynk_upload_errors);
             if (err != ESP_OK) {
                 ESP_LOGW(TAG, "Blynk telemetry failed: %s", esp_err_to_name(err));
             } else {
@@ -118,6 +124,9 @@ esp_err_t network_task_start(const char *ssid, const char *password, const char 
     if (task_handle != NULL) return ESP_ERR_INVALID_STATE;
     esp_err_t err = network_service_init(ssid, password, token);
     if (err != ESP_OK) return err;
+    const esp_err_t diagnostics_err = diagnostics_http_start();
+    if (diagnostics_err != ESP_OK)
+        ESP_LOGW(TAG, "Diagnostics HTTP startup failed: %s", esp_err_to_name(diagnostics_err));
     if (xTaskCreate(network_task, "network_task", NETWORK_TASK_STACK_BYTES, NULL,
                     NETWORK_TASK_PRIORITY, &task_handle) != pdPASS) {
         task_handle = NULL;

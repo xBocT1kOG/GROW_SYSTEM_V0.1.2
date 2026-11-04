@@ -1,3 +1,4 @@
+#include "../diagnostics/diagnostics.h"
 #include "sensor_task.h"
 #include "sensor_filter.h"
 #include "../app/app_control.h"
@@ -30,25 +31,33 @@ static void report_status(const char *sensor, esp_err_t previous, esp_err_t curr
 static void sensor_task(void *argument)
 {
     (void)argument;
+    diagnostics_sample_stack(DIAG_TASK_sensor);
     sensor_snapshot_t snapshot = {
         .temperature_c = NAN, .humidity_percent = NAN,
         .soil_raw = -1, .ldr_raw = -1, .water_distance_cm = NAN,
     };
     water_filter_t water_filter = {0};
     TickType_t last_wake = xTaskGetTickCount();
+    int64_t diagnostic_previous = -1;
     for (;;) {
+        diagnostics_sample_stack(DIAG_TASK_sensor);
+        diagnostics_check_deadline(&diagnostic_previous, SENSOR_PERIOD_MS);
+        diagnostics_increment(DIAG_sensor_cycles);
         esp_err_t err = htu21_read(&snapshot.temperature_c, &snapshot.humidity_percent);
         report_status("HTU21", snapshot.htu21_error, err);
+        if (err != ESP_OK) diagnostics_increment(DIAG_htu21_errors);
         snapshot.htu21_error = err;
         if (err == ESP_OK) snapshot.htu21_valid = true;
 
         err = soil_read(&snapshot.soil_raw, &snapshot.soil_percent);
         report_status("Soil", snapshot.soil_error, err);
+        if (err != ESP_OK) diagnostics_increment(DIAG_soil_errors);
         snapshot.soil_error = err;
         if (err == ESP_OK) snapshot.soil_valid = true;
 
         err = ldr_read(&snapshot.ldr_raw, &snapshot.light_actual_percent);
         report_status("LDR", snapshot.ldr_error, err);
+        if (err != ESP_OK) diagnostics_increment(DIAG_ldr_errors);
         snapshot.ldr_error = err;
         if (err == ESP_OK) snapshot.ldr_valid = true;
 
@@ -63,6 +72,8 @@ static void sensor_task(void *argument)
             }
         }
         report_status("HC-SR04", snapshot.water_error, err);
+        if (err != ESP_OK) diagnostics_increment(DIAG_ultrasonic_errors);
+        if (err == ESP_ERR_TIMEOUT) diagnostics_increment(DIAG_ultrasonic_timeouts);
         snapshot.water_error = err;
 
         const app_event_t event = { .type = APP_EVT_SENSOR_UPDATE, .data.sensors = snapshot };

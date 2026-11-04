@@ -1,3 +1,4 @@
+#include "../diagnostics/diagnostics.h"
 #include "time_task.h"
 #include "../app/app_control.h"
 #include "../config/app_config.h"
@@ -13,9 +14,14 @@ static const char *TAG = "time_task";
 static void time_task(void *argument)
 {
     (void)argument;
+    diagnostics_sample_stack(DIAG_TASK_time);
     TickType_t last_wake = xTaskGetTickCount();
+    int64_t diagnostic_previous = -1;
+    diagnostics_check_deadline(&diagnostic_previous, TIME_CHECK_PERIOD_MS);
     for (;;) {
+        diagnostics_sample_stack(DIAG_TASK_time);
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(TIME_CHECK_PERIOD_MS));
+        diagnostics_check_deadline(&diagnostic_previous, TIME_CHECK_PERIOD_MS);
         const app_event_t event = {
             .type = APP_EVT_TIME_CHECK,
             .data.time = time_service_now(),

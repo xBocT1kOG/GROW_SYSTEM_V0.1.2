@@ -1,3 +1,4 @@
+#include "../diagnostics/diagnostics.h"
 #include "display_task.h"
 #include "display_format.h"
 #include "../app/app_control.h"
@@ -44,6 +45,7 @@ static void render_snapshot(const app_state_t *snapshot)
 static void display_task(void *argument)
 {
     (void)argument;
+    diagnostics_sample_stack(DIAG_TASK_display);
     // Preserve the proven startup screen and delays.
     vTaskDelay(pdMS_TO_TICKS(1000));
     oled_init();
@@ -63,7 +65,10 @@ static void display_task(void *argument)
 
     ESP_LOGI(TAG, "Display task started");
     TickType_t last_wake = xTaskGetTickCount();
+    int64_t diagnostic_previous = -1;
     for (;;) {
+        diagnostics_sample_stack(DIAG_TASK_display);
+        diagnostics_check_deadline(&diagnostic_previous, DISPLAY_PERIOD_MS);
         app_state_t snapshot;
         esp_err_t err = app_state_get_snapshot(&snapshot);
         if (err == ESP_OK) render_snapshot(&snapshot);

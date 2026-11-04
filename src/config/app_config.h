@@ -4,7 +4,7 @@
 // TASK PERIODS
 // ---------------------------------------------------------
 #define SENSOR_PERIOD_MS              2000
-#define DISPLAY_PERIOD_MS             2000
+#define DISPLAY_PERIOD_MS              500
 #define BLYNK_TELEMETRY_PERIOD_MS      5000
 #define BLYNK_CONTROL_POLL_MS          5000
 #define TIME_CHECK_PERIOD_MS         60000 // Schedule checks: one minute

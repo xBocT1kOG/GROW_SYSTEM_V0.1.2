@@ -1,0 +1,7 @@
+flowchart LR
+ M["ESP32-S3"] -->|"Чтение"| S["/api/state"]
+ M -->|"Чтение"| D["/api/diagnostics"]
+ S --> P["PC_collector<br/>10 с"]
+ D --> P
+ P --> C["CSV"]
+ C --> F["Будущий анализ<br/>48–72 ч"]

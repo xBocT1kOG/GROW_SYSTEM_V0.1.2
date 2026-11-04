@@ -1,4 +1,4 @@
-// Render the four Mermaid blocks in the overview without changing their source.
+// Validate and render the localized editable Mermaid sources.
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -9,10 +9,9 @@ async function main() {
     throw new Error('Usage: node render_diagrams.cjs <mermaid.min.js> <browser executable>');
   }
   const docs = path.resolve(__dirname, '..');
-  const source = fs.readFileSync(path.join(docs, 'device-overview-ru.md'), 'utf8');
-  const blocks = [...source.matchAll(/```mermaid\r?\n([\s\S]*?)```/g)].map(match => match[1]);
-  const names = ['hardware-architecture', 'software-architecture', 'light-control', 'diagnostics-flow'];
-  if (blocks.length !== names.length) throw new Error('Expected exactly four Mermaid diagrams');
+  const kinds = ['hardware-architecture', 'software-architecture', 'light-control', 'diagnostics-flow'];
+  const names = ['ru', 'uk', 'en'].flatMap(lang => kinds.map(kind => `${kind}-${lang}`));
+  const blocks = names.map(name => fs.readFileSync(path.join(docs, 'assets', name + '.mmd'), 'utf8'));
   fs.mkdirSync(path.join(docs, 'assets'), { recursive: true });
   const browser = await chromium.launch({ executablePath: browserPath, headless: true });
   try {
@@ -22,10 +21,11 @@ async function main() {
     await page.evaluate(() => mermaid.initialize({
       startOnLoad: false, securityLevel: 'strict', theme: 'base',
       deterministicIds: true, deterministicIDSeed: 'grow-system-v02',
-      fontFamily: 'Arial', themeVariables: { fontSize: '17px', primaryColor: '#edf4fa',
+      fontFamily: 'Arial', themeVariables: { fontSize: '20px', primaryColor: '#edf4fa',
         primaryTextColor: '#172b42', primaryBorderColor: '#49759b', lineColor: '#49759b',
         secondaryColor: '#eef7f1', tertiaryColor: '#fff7e7' },
-      flowchart: { htmlLabels: false, curve: 'linear', nodeSpacing: 30, rankSpacing: 45 }
+      flowchart: { htmlLabels: false, curve: 'linear', nodeSpacing: 24, rankSpacing: 30,
+        wrappingWidth: 250, subGraphTitleMargin: { top: 8, bottom: 20 } }
     }));
     for (let i = 0; i < blocks.length; i++) {
       const svg = await page.evaluate(async ({ source, id }) => {

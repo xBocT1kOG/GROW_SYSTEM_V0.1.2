@@ -1,0 +1,8 @@
+flowchart TB
+ P["sensor_task / input_task<br/>time_task / ramp_task<br/>network_task<br/>Measurements, commands, time"] --> Q["Application event queue"]
+ Q --> C["control_task<br/>Single state owner"]
+ C --> F["Light FSM / pump state"]
+ F --> D["Drivers → actuators"]
+ C --> S["Consistent state snapshot"]
+ S --> R["display_task / network_task<br/>HTTP: /api/state<br/>Display, Blynk, state reading"]
+ P -.-> O["Task diagnostics<br/>Counters, heap, stack<br/>HTTP: /api/diagnostics"]

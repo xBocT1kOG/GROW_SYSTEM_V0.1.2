@@ -15,6 +15,7 @@ The `.pio` directory must exist (a firmware build creates it).
 Keep assertions enabled. No production timing constants or clock hooks change.
 
 Coverage includes unsynchronized time, AUTO OFF, DAWN/DUSK endpoints, no
-immediate step, schedule deduplication, backward clock dates, AUTO arming
-without catch-up, manual changes during cycles, above-target DAWN behavior,
+immediate step, schedule deduplication, backward clock dates, current-phase
+evaluation on AUTO ON and delayed synchronization, day/night boundaries,
+manual changes during cycles, above-target DAWN behavior,
 non-multiple endpoint clamping, and LDR independence.

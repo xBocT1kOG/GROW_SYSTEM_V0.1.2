@@ -92,6 +92,14 @@ static void ramp_light(app_state_t *state)
 // EVENT HANDLING
 // ---------------------------------------------------------
 
+static void update_time_sync(app_state_t *state, const time_snapshot_t *now)
+{
+    if (!state->time_synced && now->synced && state->light.auto_enabled) {
+        light_fsm_evaluate_current_phase(&state->light, now);
+    }
+    state->time_synced = now->synced;
+}
+
 // Only control_task calls this handler with its private state.
 static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
                          const app_event_t *event)
@@ -108,9 +116,11 @@ static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
     case APP_EVT_WIFI_DISCONNECTED:
         state->wifi_connected = false;
         break;
-    case APP_EVT_TIME_SYNCED:
-        state->time_synced = true;
+    case APP_EVT_TIME_SYNCED: {
+        const time_snapshot_t now = time_service_now();
+        update_time_sync(state, &now);
         break;
+    }
     case APP_EVT_SYSTEM_ERROR:
         state->last_error = event->data.error;
         break;
@@ -132,7 +142,7 @@ static void handle_event(app_state_t *state, light_fsm_context_t *fsm,
             ESP_LOGI(TAG, "%s", event->data.time.synced
                      ? "Time synced: schedule ready" : "Time not synced: schedule skipped");
         }
-        state->time_synced = event->data.time.synced;
+        update_time_sync(state, &event->data.time);
         light_fsm_check_schedule(&state->light, fsm, &event->data.time);
         break;
     case APP_EVT_LIGHT_RAMP_TICK:

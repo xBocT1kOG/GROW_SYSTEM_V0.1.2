@@ -4,6 +4,18 @@
 // ---------------------------------------------------------
 // AUTO AND SCHEDULE HANDLING
 // ---------------------------------------------------------
+void light_fsm_evaluate_current_phase(light_state_t *light, const time_snapshot_t *now)
+{
+    light->mod = LIGHT_MOD_IDLE;
+    if (!light->auto_enabled || !now->synced) return;
+    if (now->hour >= LIGHT_DAWN_START_HOUR && now->hour < LIGHT_DUSK_START_HOUR) {
+        if (light->system_level_percent < light->auto_target_percent)
+            light->mod = LIGHT_MOD_DAWN;
+    } else if (light->system_level_percent > 0) {
+        light->mod = LIGHT_MOD_DUSK;
+    }
+}
+
 void light_fsm_set_auto(light_state_t *light, light_fsm_context_t *context,
                         bool enabled, const time_snapshot_t *now)
 {
@@ -14,6 +26,7 @@ void light_fsm_set_auto(light_state_t *light, light_fsm_context_t *context,
     }
     context->armed_time_valid = now->synced;
     context->armed_at = now->timestamp;
+    light_fsm_evaluate_current_phase(light, now);
 }
 
 void light_fsm_check_schedule(light_state_t *light, light_fsm_context_t *context,
@@ -38,14 +51,9 @@ void light_fsm_check_schedule(light_state_t *light, light_fsm_context_t *context
     *last_date = date; // Consume scheduled minutes even while AUTO is off.
     if (!light->auto_enabled ||
         (context->armed_time_valid && now->timestamp - now->second <= context->armed_at)) {
-        return; // Enabling AUTO in the scheduled minute does not catch up.
+        return; // AUTO ON already evaluated this phase.
     }
-    if (now->hour == LIGHT_DAWN_START_HOUR) {
-        light->mod = light->system_level_percent < light->auto_target_percent
-            ? LIGHT_MOD_DAWN : LIGHT_MOD_IDLE;
-    } else {
-        light->mod = light->system_level_percent > 0 ? LIGHT_MOD_DUSK : LIGHT_MOD_IDLE;
-    }
+    light_fsm_evaluate_current_phase(light, now);
 }
 
 // ---------------------------------------------------------

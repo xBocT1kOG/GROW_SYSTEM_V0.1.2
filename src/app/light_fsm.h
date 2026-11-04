@@ -14,6 +14,7 @@ typedef struct {
 } light_fsm_context_t;
 
 // All functions are called only by control_task; no hardware access.
+void light_fsm_evaluate_current_phase(light_state_t *light, const time_snapshot_t *now);
 void light_fsm_set_auto(light_state_t *light, light_fsm_context_t *context,
                         bool enabled, const time_snapshot_t *now);
 void light_fsm_check_schedule(light_state_t *light, light_fsm_context_t *context,

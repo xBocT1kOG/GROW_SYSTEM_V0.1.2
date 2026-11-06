@@ -1,0 +1,839 @@
+{
+  "source": "PC_collector/2026-11-06_01-30.csv",
+  "sha256": "354bc2eaae899579d62f068fd749548bd33540cdb200794e72f751ce7e09c5f4",
+  "rows": 7180,
+  "columns": 60,
+  "start": "2026-11-06T01:30:28.744+02:00",
+  "end": "2026-11-06T21:27:01.041+02:00",
+  "duration_seconds": 71792.297,
+  "duration_hms": "19:56:32.297000",
+  "utc_offsets": [
+    "+0200"
+  ],
+  "expected_approx_samples_at_10s": 7180,
+  "intervals": {
+    "min": 10.0,
+    "median": 10.0,
+    "max": 10.001,
+    "p99": 10.001,
+    "gap_threshold_seconds": 15,
+    "gaps": []
+  },
+  "max_local_epoch_fraction_seconds": 1.0,
+  "missing_cells": {
+    "timestamp_local": 0,
+    "timestamp_epoch": 0,
+    "timestamp_utc_offset": 0,
+    "request_ok": 0,
+    "state_request_ok": 0,
+    "diagnostics_request_ok": 0,
+    "collector_error": 7180,
+    "collector_total_samples": 0,
+    "collector_full_success_samples": 0,
+    "collector_partial_samples": 0,
+    "collector_failed_samples": 0,
+    "state_pump": 0,
+    "state_LIGHT_S": 0,
+    "state_LIGHT_A": 0,
+    "state_AUTO": 0,
+    "state_MOD": 0,
+    "state_temperature": 0,
+    "state_humidity": 0,
+    "state_soil_percent": 0,
+    "state_water_percent": 0,
+    "state_wifi_connected": 0,
+    "state_time_synced": 0,
+    "state_htu21_valid": 0,
+    "state_soil_valid": 0,
+    "state_ldr_valid": 0,
+    "state_water_valid": 0,
+    "state_htu21_error": 0,
+    "state_soil_error": 0,
+    "state_ldr_error": 0,
+    "state_water_error": 0,
+    "diag_uptime_seconds": 0,
+    "diag_sensor_cycles": 0,
+    "diag_htu21_errors": 0,
+    "diag_soil_errors": 0,
+    "diag_ldr_errors": 0,
+    "diag_ultrasonic_errors": 0,
+    "diag_ultrasonic_timeouts": 0,
+    "diag_blynk_poll_ok": 0,
+    "diag_blynk_poll_errors": 0,
+    "diag_blynk_upload_ok": 0,
+    "diag_blynk_upload_errors": 0,
+    "diag_wifi_reconnects": 0,
+    "diag_app_event_queue_overflows": 0,
+    "diag_button_events": 0,
+    "diag_pump_commands": 0,
+    "diag_light_commands": 0,
+    "diag_auto_commands": 0,
+    "diag_light_ramp_ticks": 0,
+    "diag_light_ramp_steps": 0,
+    "diag_time_sync_events": 0,
+    "diag_task_deadline_misses": 0,
+    "diag_heap_free_bytes": 0,
+    "diag_heap_min_free_bytes": 0,
+    "diag_stack_control_bytes": 0,
+    "diag_stack_input_bytes": 0,
+    "diag_stack_sensor_bytes": 0,
+    "diag_stack_display_bytes": 0,
+    "diag_stack_network_bytes": 0,
+    "diag_stack_time_bytes": 0,
+    "diag_stack_ramp_bytes": 0
+  },
+  "counters": {
+    "sensor_cycles": {
+      "start": 123,
+      "final": 36020,
+      "min": 123,
+      "max": 36020,
+      "delta": 35897,
+      "decreases": 0,
+      "increases": 7179
+    },
+    "htu21_errors": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "soil_errors": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "ldr_errors": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "ultrasonic_errors": {
+      "start": 0,
+      "final": 3,
+      "min": 0,
+      "max": 3,
+      "delta": 3,
+      "decreases": 0,
+      "increases": 3,
+      "events": [
+        {
+          "row": 2459,
+          "previous": "2026-11-06T08:19:59.510+02:00",
+          "observed": "2026-11-06T08:20:09.511+02:00",
+          "delta": 1
+        },
+        {
+          "row": 3632,
+          "previous": "2026-11-06T11:35:29.944+02:00",
+          "observed": "2026-11-06T11:35:39.944+02:00",
+          "delta": 1
+        },
+        {
+          "row": 3787,
+          "previous": "2026-11-06T12:01:20.002+02:00",
+          "observed": "2026-11-06T12:01:30.002+02:00",
+          "delta": 1
+        }
+      ]
+    },
+    "ultrasonic_timeouts": {
+      "start": 0,
+      "final": 3,
+      "min": 0,
+      "max": 3,
+      "delta": 3,
+      "decreases": 0,
+      "increases": 3,
+      "events": [
+        {
+          "row": 2459,
+          "previous": "2026-11-06T08:19:59.510+02:00",
+          "observed": "2026-11-06T08:20:09.511+02:00",
+          "delta": 1
+        },
+        {
+          "row": 3632,
+          "previous": "2026-11-06T11:35:29.944+02:00",
+          "observed": "2026-11-06T11:35:39.944+02:00",
+          "delta": 1
+        },
+        {
+          "row": 3787,
+          "previous": "2026-11-06T12:01:20.002+02:00",
+          "observed": "2026-11-06T12:01:30.002+02:00",
+          "delta": 1
+        }
+      ]
+    },
+    "blynk_poll_ok": {
+      "start": 50,
+      "final": 14354,
+      "min": 50,
+      "max": 14354,
+      "delta": 14304,
+      "decreases": 0,
+      "increases": 7179
+    },
+    "blynk_poll_errors": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "blynk_upload_ok": {
+      "start": 50,
+      "final": 14353,
+      "min": 50,
+      "max": 14353,
+      "delta": 14303,
+      "decreases": 0,
+      "increases": 7179
+    },
+    "blynk_upload_errors": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "wifi_reconnects": {
+      "start": 1,
+      "final": 1,
+      "min": 1,
+      "max": 1,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "app_event_queue_overflows": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "button_events": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "pump_commands": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "light_commands": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "auto_commands": {
+      "start": 1,
+      "final": 1,
+      "min": 1,
+      "max": 1,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "light_ramp_ticks": {
+      "start": 0,
+      "final": 120,
+      "min": 0,
+      "max": 120,
+      "delta": 120,
+      "decreases": 0,
+      "increases": 120
+    },
+    "light_ramp_steps": {
+      "start": 0,
+      "final": 21,
+      "min": 0,
+      "max": 21,
+      "delta": 21,
+      "decreases": 0,
+      "increases": 21
+    },
+    "time_sync_events": {
+      "start": 1,
+      "final": 1,
+      "min": 1,
+      "max": 1,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    },
+    "task_deadline_misses": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0,
+      "events": []
+    }
+  },
+  "uptime": {
+    "start": 249,
+    "final": 72043,
+    "min": 249,
+    "max": 72043,
+    "delta": 71794,
+    "decreases": 0,
+    "increases": 7179,
+    "delta_min": 9,
+    "delta_max": 11,
+    "repeated": 0,
+    "resets": [],
+    "elapsed_difference_seconds": 1.7029999999940628
+  },
+  "collector": {
+    "full": 7180,
+    "partial": 0,
+    "failed": 0,
+    "request_success_rows": {
+      "request_ok": 7180,
+      "state_request_ok": 7180,
+      "diagnostics_request_ok": 7180
+    },
+    "nonempty_error_rows": 0,
+    "cumulative": {
+      "total_samples": {
+        "start": 1,
+        "final": 7180,
+        "min": 1,
+        "max": 7180,
+        "delta": 7179,
+        "decreases": 0,
+        "increases": 7179
+      },
+      "full_success_samples": {
+        "start": 1,
+        "final": 7180,
+        "min": 1,
+        "max": 7180,
+        "delta": 7179,
+        "decreases": 0,
+        "increases": 7179
+      },
+      "partial_samples": {
+        "start": 0,
+        "final": 0,
+        "min": 0,
+        "max": 0,
+        "delta": 0,
+        "decreases": 0,
+        "increases": 0
+      },
+      "failed_samples": {
+        "start": 0,
+        "final": 0,
+        "min": 0,
+        "max": 0,
+        "delta": 0,
+        "decreases": 0,
+        "increases": 0
+      }
+    }
+  },
+  "flags": {
+    "wifi_connected": {
+      "True": 7180
+    },
+    "time_synced": {
+      "True": 7180
+    },
+    "htu21_valid": {
+      "True": 7180
+    },
+    "soil_valid": {
+      "True": 7180
+    },
+    "ldr_valid": {
+      "True": 7180
+    },
+    "water_valid": {
+      "True": 7180
+    }
+  },
+  "sensor_error_snapshots": {
+    "htu21": {
+      "0": 7180
+    },
+    "soil": {
+      "0": 7180
+    },
+    "ldr": {
+      "0": 7180
+    },
+    "water": {
+      "0": 7180
+    }
+  },
+  "stacks": {
+    "control": {
+      "start": 1828,
+      "final": 1828,
+      "min": 1828,
+      "max": 1828,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "input": {
+      "start": 2284,
+      "final": 2284,
+      "min": 2284,
+      "max": 2284,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "sensor": {
+      "start": 2624,
+      "final": 1872,
+      "min": 1872,
+      "max": 2624,
+      "delta": -752,
+      "decreases": 2,
+      "increases": 0
+    },
+    "display": {
+      "start": 2028,
+      "final": 2028,
+      "min": 2028,
+      "max": 2028,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "network": {
+      "start": 3792,
+      "final": 3696,
+      "min": 3696,
+      "max": 3792,
+      "delta": -96,
+      "decreases": 1,
+      "increases": 0
+    },
+    "time": {
+      "start": 1868,
+      "final": 1868,
+      "min": 1868,
+      "max": 1868,
+      "delta": 0,
+      "decreases": 0,
+      "increases": 0
+    },
+    "ramp": {
+      "start": 2556,
+      "final": 2188,
+      "min": 2188,
+      "max": 2556,
+      "delta": -368,
+      "decreases": 1,
+      "increases": 0
+    }
+  },
+  "heap": {
+    "heap_free_bytes": {
+      "start": 225824,
+      "final": 225672,
+      "min": 179016,
+      "max": 225856,
+      "delta": -152,
+      "decreases": 3042,
+      "increases": 2896
+    },
+    "heap_min_free_bytes": {
+      "start": 177636,
+      "final": 172220,
+      "min": 172220,
+      "max": 177636,
+      "delta": -5416,
+      "decreases": 12,
+      "increases": 0
+    },
+    "hourly_bins": [
+      {
+        "elapsed_hour": 0,
+        "rows": 360,
+        "median": 225824.0,
+        "min": 179148,
+        "max": 225840
+      },
+      {
+        "elapsed_hour": 1,
+        "rows": 360,
+        "median": 225828.0,
+        "min": 179228,
+        "max": 225848
+      },
+      {
+        "elapsed_hour": 2,
+        "rows": 360,
+        "median": 225828.0,
+        "min": 179160,
+        "max": 225856
+      },
+      {
+        "elapsed_hour": 3,
+        "rows": 360,
+        "median": 225832.0,
+        "min": 179196,
+        "max": 225848
+      },
+      {
+        "elapsed_hour": 4,
+        "rows": 360,
+        "median": 225824.0,
+        "min": 179180,
+        "max": 225840
+      },
+      {
+        "elapsed_hour": 5,
+        "rows": 360,
+        "median": 225688.0,
+        "min": 179044,
+        "max": 225840
+      },
+      {
+        "elapsed_hour": 6,
+        "rows": 360,
+        "median": 225680.0,
+        "min": 179052,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 7,
+        "rows": 360,
+        "median": 225680.0,
+        "min": 179036,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 8,
+        "rows": 360,
+        "median": 225684.0,
+        "min": 179040,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 9,
+        "rows": 360,
+        "median": 225680.0,
+        "min": 179060,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 10,
+        "rows": 360,
+        "median": 225684.0,
+        "min": 179044,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 11,
+        "rows": 360,
+        "median": 225676.0,
+        "min": 179044,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 12,
+        "rows": 360,
+        "median": 225682.0,
+        "min": 179036,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 13,
+        "rows": 360,
+        "median": 225680.0,
+        "min": 179016,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 14,
+        "rows": 360,
+        "median": 225684.0,
+        "min": 179048,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 15,
+        "rows": 360,
+        "median": 225684.0,
+        "min": 179024,
+        "max": 225712
+      },
+      {
+        "elapsed_hour": 16,
+        "rows": 360,
+        "median": 225684.0,
+        "min": 179068,
+        "max": 225712
+      },
+      {
+        "elapsed_hour": 17,
+        "rows": 360,
+        "median": 225680.0,
+        "min": 179028,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 18,
+        "rows": 360,
+        "median": 225678.0,
+        "min": 179096,
+        "max": 225704
+      },
+      {
+        "elapsed_hour": 19,
+        "rows": 340,
+        "median": 225664.0,
+        "min": 179032,
+        "max": 225700
+      }
+    ],
+    "ols_bytes_per_hour": 4.53006076324486,
+    "first_hour_median": 225824.0,
+    "last_hour_median": 225664.0,
+    "last_min_ever_drop": "2026-11-06T11:30:19.932+02:00"
+  },
+  "sensor_continuity": {
+    "observed_delta": 35897,
+    "expected_delta_from_uptime": 35897.0,
+    "effective_seconds_per_cycle": 2.0,
+    "cycle_increment_min": 4,
+    "cycle_increment_max": 6,
+    "timeout_fraction_percent": 0.008357244337966961
+  },
+  "control": {
+    "pump": {
+      "start": 0,
+      "final": 0,
+      "min": 0,
+      "max": 0,
+      "change_count": 0,
+      "transitions": []
+    },
+    "LIGHT_S": {
+      "start": 0,
+      "final": 15,
+      "min": 0,
+      "max": 60,
+      "change_count": 21,
+      "transitions": [
+        {
+          "previous": "2026-11-06T06:06:09.249+02:00",
+          "observed": "2026-11-06T06:06:19.249+02:00",
+          "from": 0,
+          "to": 5
+        },
+        {
+          "previous": "2026-11-06T06:16:09.268+02:00",
+          "observed": "2026-11-06T06:16:19.268+02:00",
+          "from": 5,
+          "to": 10
+        },
+        {
+          "previous": "2026-11-06T06:26:09.287+02:00",
+          "observed": "2026-11-06T06:26:19.287+02:00",
+          "from": 10,
+          "to": 15
+        },
+        {
+          "previous": "2026-11-06T06:36:09.307+02:00",
+          "observed": "2026-11-06T06:36:19.307+02:00",
+          "from": 15,
+          "to": 20
+        },
+        {
+          "previous": "2026-11-06T06:46:09.326+02:00",
+          "observed": "2026-11-06T06:46:19.326+02:00",
+          "from": 20,
+          "to": 25
+        },
+        {
+          "previous": "2026-11-06T06:56:09.345+02:00",
+          "observed": "2026-11-06T06:56:19.346+02:00",
+          "from": 25,
+          "to": 30
+        },
+        {
+          "previous": "2026-11-06T07:06:09.365+02:00",
+          "observed": "2026-11-06T07:06:19.365+02:00",
+          "from": 30,
+          "to": 35
+        },
+        {
+          "previous": "2026-11-06T07:16:09.384+02:00",
+          "observed": "2026-11-06T07:16:19.385+02:00",
+          "from": 35,
+          "to": 40
+        },
+        {
+          "previous": "2026-11-06T07:26:09.402+02:00",
+          "observed": "2026-11-06T07:26:19.402+02:00",
+          "from": 40,
+          "to": 45
+        },
+        {
+          "previous": "2026-11-06T07:36:09.419+02:00",
+          "observed": "2026-11-06T07:36:19.420+02:00",
+          "from": 45,
+          "to": 50
+        },
+        {
+          "previous": "2026-11-06T07:46:09.439+02:00",
+          "observed": "2026-11-06T07:46:19.440+02:00",
+          "from": 50,
+          "to": 55
+        },
+        {
+          "previous": "2026-11-06T07:56:09.460+02:00",
+          "observed": "2026-11-06T07:56:19.460+02:00",
+          "from": 55,
+          "to": 60
+        },
+        {
+          "previous": "2026-11-06T20:06:10.914+02:00",
+          "observed": "2026-11-06T20:06:20.914+02:00",
+          "from": 60,
+          "to": 55
+        },
+        {
+          "previous": "2026-11-06T20:16:10.931+02:00",
+          "observed": "2026-11-06T20:16:20.931+02:00",
+          "from": 55,
+          "to": 50
+        },
+        {
+          "previous": "2026-11-06T20:26:10.945+02:00",
+          "observed": "2026-11-06T20:26:20.946+02:00",
+          "from": 50,
+          "to": 45
+        },
+        {
+          "previous": "2026-11-06T20:36:10.960+02:00",
+          "observed": "2026-11-06T20:36:20.960+02:00",
+          "from": 45,
+          "to": 40
+        },
+        {
+          "previous": "2026-11-06T20:46:10.972+02:00",
+          "observed": "2026-11-06T20:46:20.973+02:00",
+          "from": 40,
+          "to": 35
+        },
+        {
+          "previous": "2026-11-06T20:56:10.989+02:00",
+          "observed": "2026-11-06T20:56:20.989+02:00",
+          "from": 35,
+          "to": 30
+        },
+        {
+          "previous": "2026-11-06T21:06:11.009+02:00",
+          "observed": "2026-11-06T21:06:21.009+02:00",
+          "from": 30,
+          "to": 25
+        },
+        {
+          "previous": "2026-11-06T21:16:11.023+02:00",
+          "observed": "2026-11-06T21:16:21.023+02:00",
+          "from": 25,
+          "to": 20
+        },
+        {
+          "previous": "2026-11-06T21:26:11.039+02:00",
+          "observed": "2026-11-06T21:26:21.039+02:00",
+          "from": 20,
+          "to": 15
+        }
+      ]
+    },
+    "LIGHT_A": {
+      "start": 0,
+      "final": 100,
+      "min": 0,
+      "max": 100,
+      "change_count": 1
+    },
+    "AUTO": {
+      "start": 1,
+      "final": 1,
+      "min": 1,
+      "max": 1,
+      "change_count": 0,
+      "transitions": []
+    },
+    "MOD": {
+      "start": 0,
+      "final": 2,
+      "min": 0,
+      "max": 2,
+      "change_count": 3,
+      "transitions": [
+        {
+          "previous": "2026-11-06T06:00:09.237+02:00",
+          "observed": "2026-11-06T06:00:19.237+02:00",
+          "from": 0,
+          "to": 1
+        },
+        {
+          "previous": "2026-11-06T07:56:09.460+02:00",
+          "observed": "2026-11-06T07:56:19.460+02:00",
+          "from": 1,
+          "to": 0
+        },
+        {
+          "previous": "2026-11-06T20:00:10.903+02:00",
+          "observed": "2026-11-06T20:00:20.904+02:00",
+          "from": 0,
+          "to": 2
+        }
+      ]
+    }
+  }
+}

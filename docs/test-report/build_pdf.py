@@ -24,10 +24,10 @@ def inline(value):
 def footer(canvas,doc):
     canvas.saveState();canvas.setStrokeColor(colors.HexColor('#D3E0E5'))
     canvas.line(44,38,A4[0]-44,38);canvas.setFont('Body',8);canvas.setFillColor(MUTED)
-    canvas.drawString(44,25,'GROW SYSTEM V0.2 | Непрерывное тестирование')
+    canvas.drawString(44,25,doc.report_footer)
     canvas.drawRightString(A4[0]-44,25,str(doc.page));canvas.restoreState()
 
-def build(font_dir):
+def build(font_dir, lang='ru'):
     for name,file in [('Body','arial.ttf'),('Body-Bold','arialbd.ttf'),('Code','consola.ttf')]:
         pdfmetrics.registerFont(TTFont(name,str(font_dir/file)))
     pdfmetrics.registerFontFamily('Body',normal='Body',bold='Body-Bold',italic='Body',boldItalic='Body-Bold')
@@ -40,7 +40,7 @@ def build(font_dir):
       'cell':ParagraphStyle('cell',fontName='Body',fontSize=9,leading=11.4,textColor=INK),
       'headcell':ParagraphStyle('headcell',fontName='Body-Bold',fontSize=9,leading=11.4,textColor=colors.white),
     }
-    pages=(HERE/'endurance-report-ru.md').read_text(encoding='utf-8').split('<!-- pagebreak -->')
+    pages=(HERE/f'endurance-report-{lang}.md').read_text(encoding='utf-8').split('<!-- pagebreak -->')
     story=[]
     for pi,page in enumerate(pages):
         if pi:story.append(PageBreak())
@@ -58,9 +58,9 @@ def build(font_dir):
                 rows=[[v.strip() for v in line.strip('|').split('|')] for line in block.splitlines()]
                 rows.pop(1);heads=rows[0]
                 if len(heads)==2:ratios=[.48,.52]
-                elif len(heads)==3:ratios=[.34,.29,.37] if heads[0]=='Подсистема' else [.46,.27,.27]
+                elif len(heads)==3:ratios=[.34,.29,.37] if heads[0] in ('Подсистема','Підсистема','Subsystem') else [.46,.27,.27]
                 else:
-                    ratios=[.48,.17,.17,.18] if heads[1]=='Начало' else [.20,.20,.25,.35]
+                    ratios=[.48,.17,.17,.18] if heads[1] in ('Начало','Початок','Initial') else [.20,.20,.25,.35]
                 data=[[Paragraph(inline(v),styles['headcell' if j==0 else 'cell']) for v in row] for j,row in enumerate(rows)]
                 tab=Table(data,colWidths=[WIDTH*r for r in ratios],repeatRows=1,hAlign='LEFT')
                 tab.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),TEAL),('VALIGN',(0,0),(-1,-1),'TOP'),
@@ -78,15 +78,22 @@ def build(font_dir):
                 for line in block.splitlines():
                     story.append(Paragraph('• '+inline(line[2:]),styles['body']))
             else:
-                kind='tablecaption' if block.startswith('Таблица ') else 'caption' if block.startswith('Рисунок ') else 'body'
+                kind='tablecaption' if block.startswith(('Таблица ','Таблиця ','Table ')) else 'caption' if block.startswith(('Рисунок ','Figure ')) else 'body'
                 story.append(Paragraph(inline(block.replace('\n',' ')),styles[kind]))
-    target=HERE/'GROW_SYSTEM_V0.2_Endurance_Test_Report_RU.pdf'
+    target=HERE/f'GROW_SYSTEM_V0.2_Endurance_Test_Report_{lang.upper()}.pdf'
+    titles={'ru':'Отчёт о непрерывном тестировании и состоянии системы',
+            'uk':'Звіт про безперервне тестування та стан системи',
+            'en':'Continuous Endurance Test and System Health Report'}
+    footers={'ru':'Непрерывное тестирование','uk':'Безперервне тестування','en':'Continuous endurance test'}
     doc=SimpleDocTemplate(str(target),pagesize=A4,rightMargin=44,leftMargin=44,topMargin=45,bottomMargin=49,
-        title='GROW SYSTEM V0.2 - Отчёт о непрерывном тестировании и состоянии системы',author='',pageCompression=1)
+        title='GROW SYSTEM V0.2 - '+titles[lang],author='',pageCompression=1)
+    doc.report_footer='GROW SYSTEM V0.2 | '+footers[lang]
     doc.build(story,onFirstPage=footer,onLaterPages=footer)
     print(target.name)
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--font-dir',type=Path,default=Path('C:/Windows/Fonts'))
-    build(parser.parse_args().font_dir)
+    parser.add_argument('--lang',choices=('ru','uk','en'),default='ru')
+    args=parser.parse_args()
+    build(args.font_dir,args.lang)

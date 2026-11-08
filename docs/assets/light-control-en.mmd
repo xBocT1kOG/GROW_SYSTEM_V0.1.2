@@ -1,0 +1,9 @@
+flowchart TB
+ E["AUTO ON / first valid time<br/>Checks at 06:00 and 20:00"] --> C["AUTO enabled, time valid<br/>Select phase by time and LIGHT_S"]
+ C -->|"06:00–20:00<br/>LIGHT_S below 60%"| D["DAWN<br/>+5 pp / 10 min<br/>To 60%"]
+ C -->|"20:00–06:00<br/>LIGHT_S above 0%"| K["DUSK<br/>−5 pp / 10 min<br/>To 0%"]
+ C -->|"Otherwise"| I["IDLE<br/>No automatic steps"]
+ D -->|"Target reached"| I
+ K -->|"Target reached"| I
+ O["AUTO OFF<br/>Retain LIGHT_S"] --> I
+ N["Buttons and Blynk available in all phases<br/>LIGHT_A: LDR monitoring only"]

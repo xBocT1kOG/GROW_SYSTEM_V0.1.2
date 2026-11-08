@@ -1,0 +1,7 @@
+flowchart LR
+ M["ESP32-S3"] -->|"Read-only"| S["/api/state"]
+ M -->|"Read-only"| D["/api/diagnostics"]
+ S --> P["PC_collector<br/>10 s"]
+ D --> P
+ P --> C["CSV"]
+ C --> F["Future analysis<br/>48–72 h"]

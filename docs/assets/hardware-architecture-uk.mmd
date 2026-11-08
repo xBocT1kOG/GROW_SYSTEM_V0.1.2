@@ -1,0 +1,18 @@
+flowchart TB
+ PSU["Джерело 12 В / 3 А"]
+ subgraph POWER["12 V"]
+ MOS["HW-517 MOSFET"] ==> PUMP["Насос"]
+ end
+ DC["DC/DC MP2307<br/>12 → 5 V"]
+ subgraph LOGIC["5 V / 3.3 V"]
+ MCU["ESP32-S3"]
+ S["Датчики<br/>HTU21D / HC-SR04<br/>Ґрунт / LDR"] --> MCU
+ B["4 кнопки"] --> MCU
+ MCU --> O["OLED I2C"]
+ end
+ PSU ==> MOS
+ PSU ==> DC
+ DC ==> MCU
+ MCU -.-> MOS
+ MCU --> C["LC-LM358-PWM2V<br/>PWM → 0–10 V"]
+ C --> L["Світильник<br/>Живлення за паспортом"]

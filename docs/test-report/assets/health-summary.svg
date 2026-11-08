@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="648pt" height="162pt" viewBox="0 0 648 162" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-11-06T21:43:13.714336</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 162
+L 648 162
+L 648 0
+L 0 0
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 15.492263 76.788
+L 162.516488 76.788
+L 162.516488 15.012
+L 15.492263 15.012
+z
+" clip-path="url(#p41ea518f85)" style="fill: #edf4f6; stroke: #8ca7b3; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 171.901013 76.788
+L 318.925237 76.788
+L 318.925237 15.012
+L 171.901013 15.012
+z
+" clip-path="url(#p41ea518f85)" style="fill: #edf4f6; stroke: #8ca7b3; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 328.309762 76.788
+L 475.333987 76.788
+L 475.333987 15.012
+L 328.309762 15.012
+z
+" clip-path="url(#p41ea518f85)" style="fill: #edf4f6; stroke: #8ca7b3; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 484.718512 76.788
+L 631.742737 76.788
+L 631.742737 15.012
+L 484.718512 15.012
+z
+" clip-path="url(#p41ea518f85)" style="fill: #edf4f6; stroke: #8ca7b3; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 15.492263 146.988
+L 162.516488 146.988
+L 162.516488 85.212
+L 15.492263 85.212
+z
+" clip-path="url(#p41ea518f85)" style="fill: #edf4f6; stroke: #8ca7b3; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 171.901013 146.988
+L 318.925237 146.988
+L 318.925237 85.212
+L 171.901013 85.212
+z
+" clip-path="url(#p41ea518f85)" style="fill: #edf4f6; stroke: #8ca7b3; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 328.309762 146.988
+L 475.333987 146.988
+L 475.333987 85.212
+L 328.309762 85.212
+z
+" clip-path="url(#p41ea518f85)" style="fill: #fff1e2; stroke: #a45b23; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 484.718512 146.988
+L 631.742737 146.988
+L 631.742737 85.212
+L 484.718512 85.212
+z
+" clip-path="url(#p41ea518f85)" style="fill: #edf4f6; stroke: #8ca7b3; stroke-width: 0.6; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="26.440875" y="33.966" transform="rotate(-0 26.440875 33.966)">Наблюдение</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #207d82" x="26.440875" y="60.642" transform="rotate(-0 26.440875 60.642)">19 ч 56 мин</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="182.849625" y="33.966" transform="rotate(-0 182.849625 33.966)">Коллектор</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #207d82" x="182.849625" y="60.642" transform="rotate(-0 182.849625 60.642)">7180 полных опросов</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="339.258375" y="33.966" transform="rotate(-0 339.258375 33.966)">Очередь / сроки</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #207d82" x="339.258375" y="60.642" transform="rotate(-0 339.258375 60.642)">Прирост: 0 / 0</text>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="495.667125" y="33.966" transform="rotate(-0 495.667125 33.966)">Heap</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #207d82" x="495.667125" y="60.642" transform="rotate(-0 495.667125 60.642)">Без явного истощения</text>
+   </g>
+   <g id="text_9">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="26.440875" y="104.166" transform="rotate(-0 26.440875 104.166)">Стеки</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #207d82" x="26.440875" y="130.842" transform="rotate(-0 26.440875 130.842)">Все остатки &gt;0</text>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="182.849625" y="104.166" transform="rotate(-0 182.849625 104.166)">Wi-Fi / Blynk</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #207d82" x="182.849625" y="130.842" transform="rotate(-0 182.849625 130.842)">Новых подключений: 0</text>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="339.258375" y="104.166" transform="rotate(-0 339.258375 104.166)">HC-SR04</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #a45b23" x="339.258375" y="130.842" transform="rotate(-0 339.258375 130.842)">Тайм-аутов: 3</text>
+   </g>
+   <g id="text_15">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #183344" x="495.667125" y="104.166" transform="rotate(-0 495.667125 104.166)">Граница вывода</text>
+   </g>
+   <g id="text_16">
+    <text style="font-size: 9.6px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #207d82" x="495.667125" y="130.842" transform="rotate(-0 495.667125 130.842)">Только данный прогон</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p41ea518f85">
+   <rect x="10.8" y="10.8" width="625.635" height="140.4"/>
+  </clipPath>
+ </defs>
+</svg>

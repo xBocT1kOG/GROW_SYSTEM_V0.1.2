@@ -1,0 +1,8 @@
+flowchart TB
+ P["sensor_task / input_task<br/>time_task / ramp_task<br/>network_task<br/>Вимірювання, команди, час"] --> Q["Черга подій застосунку"]
+ Q --> C["control_task<br/>Єдиний власник стану"]
+ C --> F["Light FSM / стан насоса"]
+ F --> D["Драйвери → виконавчі пристрої"]
+ C --> S["Узгоджений знімок стану"]
+ S --> R["display_task / network_task<br/>HTTP: /api/state<br/>Екран, Blynk, читання стану"]
+ P -.-> O["Діагностика задач<br/>Лічильники, heap, стек<br/>HTTP: /api/diagnostics"]

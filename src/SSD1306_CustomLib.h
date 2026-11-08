@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <string.h>
-#include "driver/i2c_master.h" // I2C !!!Master!!! Library
+#include "driver/i2c_master.h" // I2C master interface
 
-i2c_master_bus_handle_t bus_handle;
-i2c_master_dev_handle_t oled_handle;
+extern i2c_master_bus_handle_t bus_handle;
+extern i2c_master_dev_handle_t oled_handle;
 
-// Base font(5x8 pixels per character, only supports ASCII 32-90 -> upper case, digits, and some symbols)
+// 5x8 font for ASCII 32-90: uppercase letters, digits and symbols.
 static const uint8_t font5x8[59][5] = {
     {0x00,0x00,0x00,0x00,0x00}, {0x00,0x00,0x5F,0x00,0x00}, {0x00,0x07,0x00,0x07,0x00}, {0x14,0x7F,0x14,0x7F,0x14},
     {0x24,0x2A,0x7F,0x2A,0x12}, {0x23,0x13,0x08,0x64,0x62}, {0x36,0x49,0x55,0x22,0x50}, {0x00,0x05,0x03,0x00,0x00},
@@ -24,7 +24,9 @@ static const uint8_t font5x8[59][5] = {
     {0x63,0x14,0x08,0x14,0x63}, {0x03,0x04,0x78,0x04,0x03}, {0x61,0x51,0x49,0x45,0x43}
 };
 
-// Base functions for OLED control
+// ---------------------------------------------------------
+// OLED COMMAND TRANSPORT
+// ---------------------------------------------------------
 static void oled_cmd(uint8_t cmd) {
     uint8_t buf[2] = {0x00, cmd};
     i2c_master_transmit(oled_handle, buf, 2, -1);
@@ -37,7 +39,9 @@ static void oled_data(const uint8_t *data, size_t len) {
     i2c_master_transmit(oled_handle, buf, len + 1, -1);
 }
 
-// OLED initialization and utility functions
+// ---------------------------------------------------------
+// OLED INITIALIZATION AND RENDERING
+// ---------------------------------------------------------
 static void oled_init(void) {
     uint8_t cmds[] = {
         0xAE, 0x20, 0x00, 0x21, 0x00, 0x7F, 0x22, 0x00, 0x07, 
@@ -62,9 +66,9 @@ static void oled_fill(uint8_t pattern) {
 }
 
 static void oled_print(uint8_t page, uint8_t col, const char *str) {
-    oled_cmd(0xB0 + page);                    // Row/page          
-    oled_cmd(0x00 + (col & 0x0F));            // Column
-    oled_cmd(0x10 + ((col >> 4) & 0x0F));     // Text
+    oled_cmd(0xB0 + page);                    // Page address
+    oled_cmd(0x00 + (col & 0x0F));            // Low column-address nibble
+    oled_cmd(0x10 + ((col >> 4) & 0x0F));     // High column-address nibble
 
     while (*str) {
         if (*str >= 32 && *str <= 90) {
